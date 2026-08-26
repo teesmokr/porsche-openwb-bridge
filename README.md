@@ -25,10 +25,13 @@ Der Porsche-Voll-Login braucht ein **Captcha** — das löst man **einmalig am P
 (pc-tool → Tab 1). Dabei entsteht ein **Refresh-Token**, mit dem sich alles
 Weitere ohne Captcha erneuert. Danach:
 
-- **ESP32-Bridge (empfohlen):** Refresh-Token ins Web-Interface des ESP32
-  eintragen. Der ESP32 holt den SoC dauerhaft und stellt ihn per HTTP bereit.
-  In openWB das eingebaute SoC-Modul **HTTP** auf `http://<esp-ip>/soc` zeigen.
-  → siehe [firmware-esp32/README.md](firmware-esp32/README.md)
+- **ESP32-Bridge (empfohlen):** Anmeldung **direkt im Web-Interface** des ESP32
+  (E-Mail/Passwort, Captcha wird angezeigt) — oder alternativ den am PC erzeugten
+  Refresh-Token eintragen. Der ESP32 holt den SoC dauerhaft und stellt ihn per
+  HTTP bereit; in openWB das SoC-Modul **HTTP** auf `http://<esp-ip>/soc` zeigen.
+  Enthält außerdem einen **Online-Updater (OTA)** aus diesem Repo.
+  → siehe [firmware-esp32/README.md](firmware-esp32/README.md) und
+  [firmware-bin/README.md](firmware-bin/README.md)
 - **PC-Bridge (ohne SSH, ohne Extra-Hardware):** pc-tool → Tab 2 startet einen
   lokalen HTTP-Dienst; openWB-HTTP-Modul zeigt darauf. PC muss laufen.
 - **Natives Modul (nur mit SSH-Zugang zur openWB):** Modul aus `openwb-module/`

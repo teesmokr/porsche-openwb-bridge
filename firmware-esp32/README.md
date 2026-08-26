@@ -13,16 +13,27 @@ Getestet: kompiliert mit ESP32-Arduino-Core 2.0.17, ArduinoJson 7.4.3
 - Stromversorgung über USB oder 5 V/GND (z. B. aus der openWB).
 - WLAN-Empfang am Einbauort sicherstellen.
 
-## Voraussetzung: Refresh-Token (einmalig am PC holen)
+## Anmeldung — zwei Wege
 
-Der ESP32 kann sich **nicht** komplett neu einloggen (Porsche verlangt ein
-Captcha). Er braucht einen **Refresh-Token**, den du einmalig erzeugst:
+**Weg A (empfohlen, ohne PC): direkt im Web-Interface.** Der ESP32 kann den
+Porsche-Login inklusive **Captcha** selbst durchführen: E-Mail/Passwort im
+Web-Interface eingeben → falls ein Captcha kommt, wird das Bild angezeigt →
+Code eintippen → fertig. Der Refresh-Token wird im Flash gespeichert.
 
-1. `openWB-Porsche-Tool.exe` am PC starten, **Tab 1**: E-Mail/Passwort →
-   „SoC abrufen" (ggf. Captcha lösen), bis der SoC erscheint.
-2. Button **„Refresh-Token kopieren"** (Tab 1) — der Token liegt dann in der
-   Zwischenablage. (Alternativ „Token exportieren" und den Wert
-   `refresh_token` aus der JSON-Datei kopieren.)
+> Experimentell: Der komplette Auth0-Login (Cookies/Redirects) läuft auf dem
+> ESP32. Klappt es nicht (Porsche ändert gelegentlich den Ablauf), nutze Weg B.
+
+**Weg B (Fallback): Refresh-Token am PC holen.**
+1. `openWB-Porsche-Tool.exe` am PC, **Tab 1**: einloggen (ggf. Captcha).
+2. **„Refresh-Token kopieren"** → im Web-Interface des ESP32 ins Feld
+   „Refresh-Token" einfügen.
+
+## Online-Update (OTA)
+
+Der ESP32 kann sich über dein Git-Repo selbst aktualisieren: im Web-Interface
+unter „Einrichtung" die **Update-URL** (Roh-URL der `version.json`) eintragen,
+dann **„Auf Updates prüfen"** → **„Update installieren"**. Details und Setup
+für private Repos: siehe `firmware-bin/README.md` im Repository.
 
 ## Firmware flashen
 

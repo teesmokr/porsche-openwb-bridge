@@ -5,11 +5,11 @@
  * Porsche ueber Porsche Connect und stellt sie per HTTP bereit, damit openWB
  * sie mit dem eingebauten SoC-Modul "HTTP" abfragen kann.
  *
- * WICHTIG: Der ESP32 macht KEINEN Voll-Login (das braucht ein Captcha). Er
- * nutzt nur einen REFRESH-TOKEN, den du einmalig am PC (openWB-Porsche-Tool,
- * Tab 1 -> Login) erzeugst und hier im Web-Interface eintraegst. Der ESP32
- * erneuert damit selbststaendig den Access-Token (rotierender Refresh-Token
- * wird im Flash gespeichert).
+ * LOGIN: Du kannst dich direkt im Web-Interface anmelden (E-Mail/Passwort,
+ * Captcha wird im Browser angezeigt) - dann braucht es das PC-Tool nicht.
+ * Alternativ einen am PC erzeugten REFRESH-TOKEN eintragen. Der ESP32 erneuert
+ * den Access-Token selbststaendig (rotierender Refresh-Token wird im Flash
+ * gespeichert). Zusaetzlich: Online-Update (OTA) aus dem Git-Repo.
  *
  * Endpunkte fuer openWB:
  *   http://<ESP-IP>/soc     -> Ladestand als ganze Zahl  (soc_url)
@@ -27,9 +27,16 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#include <HTTPUpdate.h>
 #include <WebServer.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
+#include <map>
+
+// Firmware-Version (fuer den Online-Updater)
+static const char* FW_VERSION = "1.1.0";
+
+struct Resp;  // Forward-Declaration (Arduino generiert Prototypen vor der Definition)
 
 // ---- Porsche-Connect-Konstanten -----------------------------------------
 static const char* TOKEN_URL   = "https://identity.porsche.com/oauth/token";
@@ -38,6 +45,12 @@ static const char* CLIENT_ID   = "XhygisuebbrqQ80byOuU5VncxLIm8E6H";
 static const char* X_CLIENT_ID = "41843fb4-691d-4970-85c7-2673e8ecef40";
 static const char* USER_AGENT  = "openWB-porsche-esp32/1.0";
 static const char* REDIRECT_URI = "my-porsche-app://auth0/callback";
+static const char* AUDIENCE    = "https://api.porsche.com";
+static const char* SCOPE = "openid profile email offline_access mbb ssodb badge vin "
+                           "dealers cars charging manageCharging plugAndCharge climatisation "
+                           "manageClimatisation pid:user_profile.porscheid:read "
+                           "pid:user_profile.name:read pid:user_profile.vehicles:read "
+                           "pid:user_profile.emails:read pid:user_profile.locale:read";
 
 // ---- Setup-Accesspoint (erster Start / kein WLAN) ------------------------
 static const char* AP_SSID = "openWB-Porsche-Bridge";
@@ -49,6 +62,22 @@ Preferences prefs;
 // ---- Konfiguration (aus Flash) ------------------------------------------
 String cfgSsid, cfgPass, cfgRefresh, cfgVin;
 uint32_t cfgIntervalMin = 10;
+String cfgUpdateUrl, cfgUpdateToken;   // Online-Updater (version.json + optional Token)
+
+// ---- OTA-Update-Status ---------------------------------------------------
+String updateStatus = "";
+String latestVersion = "";
+String latestBinUrl = "";
+bool   updateAvailable = false;
+
+// ---- Web-Login (Auth0) Zwischenzustand -----------------------------------
+std::map<String, String> authCookies;   // Cookie-Jar fuer den Login-Flow
+String loginState;        // Auth0 'state'
+String loginEmail, loginPassword;
+String loginCaptcha;      // data-URI des Captcha-Bildes (fuer die Web-UI)
+String loginError;        // Klartext-Fehler fuer die Web-UI
+bool   loginNeedCaptcha = false;
+bool   loginSuccess = false;
 
 // ---- Laufzeit-Status -----------------------------------------------------
 String accessToken;
@@ -83,6 +112,8 @@ void loadConfig() {
   cfgRefresh = prefs.getString("refresh", "");
   cfgVin     = prefs.getString("vin", "");
   cfgIntervalMin = prefs.getUInt("interval", 10);
+  cfgUpdateUrl   = prefs.getString("upd_url", "");
+  cfgUpdateToken = prefs.getString("upd_tok", "");
   prefs.end();
 }
 
@@ -226,6 +257,251 @@ void fetchSoc() {
 // ==========================================================================
 //  Web-Interface
 // ==========================================================================
+// ==========================================================================
+//  Online-Updater (OTA aus dem Git-Repo)
+// ==========================================================================
+bool httpGetString(const String& url, const String& token, String& out, int& code) {
+  WiFiClientSecure client; client.setInsecure();
+  HTTPClient https;
+  if (!https.begin(client, url)) { code = -1; return false; }
+  https.addHeader("User-Agent", "openWB-porsche-esp32");
+  https.addHeader("Accept", "application/vnd.github.raw");
+  if (token.length()) https.addHeader("Authorization", "token " + token);
+  code = https.GET();
+  out = https.getString();
+  https.end();
+  return code == 200;
+}
+
+void checkUpdate() {
+  if (cfgUpdateUrl.isEmpty()) { updateStatus = "Keine Update-URL konfiguriert."; return; }
+  String body; int code;
+  if (!httpGetString(cfgUpdateUrl, cfgUpdateToken, body, code)) {
+    updateStatus = "Update-Pruefung HTTP " + String(code);
+    logMsg(updateStatus); return;
+  }
+  JsonDocument d;
+  if (deserializeJson(d, body)) { updateStatus = "version.json nicht lesbar."; return; }
+  latestVersion = d["version"].as<String>();
+  latestBinUrl  = d["bin"].as<String>();
+  updateAvailable = (latestVersion.length() && latestVersion != FW_VERSION);
+  updateStatus = updateAvailable ? ("Update verfuegbar: " + latestVersion + " (installiert: " + FW_VERSION + ")")
+                                 : ("Firmware aktuell (" + String(FW_VERSION) + ").");
+  logMsg(updateStatus);
+}
+
+void doUpdate() {
+  if (latestBinUrl.isEmpty()) { updateStatus = "Erst 'Auf Updates pruefen'."; return; }
+  updateStatus = "Update laeuft, bitte warten ...";
+  logMsg("OTA-Update von " + latestBinUrl);
+  WiFiClientSecure client; client.setInsecure();
+  HTTPClient http;
+  http.begin(client, latestBinUrl);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  http.addHeader("User-Agent", "openWB-porsche-esp32");
+  if (cfgUpdateToken.length()) http.addHeader("Authorization", "token " + cfgUpdateToken);
+  httpUpdate.rebootOnUpdate(true);
+  t_httpUpdate_return ret = httpUpdate.update(http);
+  http.end();
+  if (ret == HTTP_UPDATE_FAILED) {
+    updateStatus = "Update fehlgeschlagen: " + httpUpdate.getLastErrorString();
+    logMsg(updateStatus);
+  } else if (ret == HTTP_UPDATE_NO_UPDATES) {
+    updateStatus = "Keine Aktualisierung noetig.";
+  }  // bei Erfolg rebootet das Geraet automatisch
+}
+
+// ==========================================================================
+//  Web-Login gegen Porsche/Auth0 (inkl. Captcha) - EXPERIMENTELL
+// ==========================================================================
+String urlencode(const String& s) {
+  String o; char b[4];
+  for (size_t i = 0; i < s.length(); i++) {
+    char c = s[i];
+    if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') o += c;
+    else { sprintf(b, "%%%02X", (uint8_t)c); o += b; }
+  }
+  return o;
+}
+
+void storeCookie(const String& setCookie) {
+  int eq = setCookie.indexOf('=');
+  if (eq <= 0) return;
+  int sc = setCookie.indexOf(';');
+  String name = setCookie.substring(0, eq); name.trim();
+  String val = setCookie.substring(eq + 1, sc < 0 ? setCookie.length() : sc);
+  authCookies[name] = val;
+}
+
+String cookieHeaderLine() {
+  if (authCookies.empty()) return "";
+  String s = "Cookie: ";
+  bool first = true;
+  for (auto& kv : authCookies) { if (!first) s += "; "; s += kv.first + "=" + kv.second; first = false; }
+  s += "\r\n";
+  return s;
+}
+
+struct Resp { int status; String location; String body; };
+
+bool rawHttps(const String& host, const String& method, const String& path,
+              const String& extraHeaders, const String& reqBody, Resp& r) {
+  r.status = 0; r.location = ""; r.body = "";
+  WiFiClientSecure c; c.setInsecure(); c.setTimeout(15);
+  if (!c.connect(host.c_str(), 443)) { loginError = "Verbindung zu " + host + " fehlgeschlagen."; return false; }
+  String req = method + " " + path + " HTTP/1.1\r\n";
+  req += "Host: " + host + "\r\n";
+  req += "User-Agent: " + String(USER_AGENT) + "\r\n";
+  req += "X-Client-ID: " + String(X_CLIENT_ID) + "\r\n";
+  req += "Accept: */*\r\n";
+  req += "Connection: close\r\n";
+  req += cookieHeaderLine();
+  req += extraHeaders;
+  if (method == "POST") req += "Content-Length: " + String(reqBody.length()) + "\r\n";
+  req += "\r\n" + reqBody;
+  c.print(req);
+
+  String statusLine = c.readStringUntil('\n');
+  int sp = statusLine.indexOf(' ');
+  if (sp < 0) { c.stop(); return false; }
+  r.status = statusLine.substring(sp + 1, sp + 4).toInt();
+
+  bool chunked = false; long contentLen = -1;
+  while (true) {
+    String line = c.readStringUntil('\n');
+    line.replace("\r", "");
+    if (line.length() == 0) break;
+    int colon = line.indexOf(':');
+    if (colon < 0) continue;
+    String name = line.substring(0, colon); String val = line.substring(colon + 1); val.trim();
+    if (name.equalsIgnoreCase("Location")) r.location = val;
+    else if (name.equalsIgnoreCase("Set-Cookie")) storeCookie(val);
+    else if (name.equalsIgnoreCase("Transfer-Encoding") && val.indexOf("chunked") >= 0) chunked = true;
+    else if (name.equalsIgnoreCase("Content-Length")) contentLen = val.toInt();
+  }
+
+  const size_t CAP = 100000;  // Body-Obergrenze gegen OOM
+  uint32_t t0 = millis();
+  if (chunked) {
+    while (millis() - t0 < 15000) {
+      String len = c.readStringUntil('\n'); len.replace("\r", ""); len.trim();
+      long n = strtol(len.c_str(), nullptr, 16);
+      if (n <= 0) break;
+      while (n > 0 && (c.connected() || c.available())) {
+        if (c.available()) { char ch = c.read(); if (r.body.length() < CAP) r.body += ch; n--; }
+      }
+      c.readStringUntil('\n');  // CRLF nach Chunk
+    }
+  } else if (contentLen > 0) {
+    long n = contentLen;
+    while (n > 0 && (c.connected() || c.available()) && millis() - t0 < 15000) {
+      if (c.available()) { char ch = c.read(); if (r.body.length() < CAP) r.body += ch; n--; }
+    }
+  } else {
+    while ((c.connected() || c.available()) && millis() - t0 < 15000) {
+      if (c.available()) { char ch = c.read(); if (r.body.length() < CAP) r.body += ch; }
+    }
+  }
+  c.stop();
+  return true;
+}
+
+String extractCaptcha(const String& html) {
+  int i = html.indexOf("\"image\":\"data:image");
+  if (i >= 0) {
+    int s = html.indexOf("data:image", i);
+    int e = html.indexOf('"', s);
+    if (e > s) { String u = html.substring(s, e); u.replace("\\/", "/"); return u; }
+  }
+  i = html.indexOf("src=\"data:image");
+  if (i >= 0) {
+    int s = html.indexOf("data:image", i);
+    int e = html.indexOf('"', s);
+    if (e > s) return html.substring(s, e);
+  }
+  return "";
+}
+
+bool exchangeCodeWeb(const String& code) {
+  Resp r;
+  String body = "client_id=" + String(CLIENT_ID) + "&grant_type=authorization_code&code=" +
+                urlencode(code) + "&redirect_uri=" + urlencode(REDIRECT_URI);
+  if (!rawHttps("identity.porsche.com", "POST", "/oauth/token",
+                "Content-Type: application/x-www-form-urlencoded\r\n", body, r)) return false;
+  if (r.status != 200) { loginError = "Token-Tausch HTTP " + String(r.status); return false; }
+  JsonDocument d;
+  if (deserializeJson(d, r.body)) { loginError = "Token-Antwort nicht lesbar."; return false; }
+  const char* rt = d["refresh_token"];
+  if (!rt || strlen(rt) == 0) { loginError = "Kein Refresh-Token erhalten."; return false; }
+  saveRefreshToken(String(rt));
+  accessToken = d["access_token"].as<String>();
+  tokenExpiresAtMs = millis() + ((uint32_t)(d["expires_in"] | 3600) - 60) * 1000UL;
+  loginSuccess = true; loginNeedCaptcha = false; loginError = "";
+  logMsg("Web-Login erfolgreich, Refresh-Token gespeichert.");
+  return true;
+}
+
+// identifier -> (captcha?) -> password -> resume -> code -> token
+bool doIdentifierAndFinish(const String& captchaCode) {
+  Resp r;
+  String body = "state=" + urlencode(loginState) + "&username=" + urlencode(loginEmail) +
+                "&js-available=true&webauthn-available=false&is-brave=false" +
+                "&webauthn-platform-available=false&action=default";
+  if (captchaCode.length()) body += "&captcha=" + urlencode(captchaCode);
+  if (!rawHttps("identity.porsche.com", "POST", "/u/login/identifier?state=" + urlencode(loginState),
+                "Content-Type: application/x-www-form-urlencoded\r\n", body, r)) return false;
+  if (r.status == 401) { loginError = "E-Mail wurde abgelehnt."; return false; }
+  if (r.status == 400) {
+    loginCaptcha = extractCaptcha(r.body);
+    loginNeedCaptcha = true;
+    loginError = captchaCode.length() ? "Captcha war falsch, bitte erneut." : "Captcha erforderlich.";
+    if (loginCaptcha.isEmpty()) loginError = "Captcha noetig, Bild nicht lesbar.";
+    return false;
+  }
+  // Passwort
+  Resp p;
+  String pbody = "state=" + urlencode(loginState) + "&username=" + urlencode(loginEmail) +
+                 "&password=" + urlencode(loginPassword) + "&action=default";
+  if (!rawHttps("identity.porsche.com", "POST", "/u/login/password?state=" + urlencode(loginState),
+                "Content-Type: application/x-www-form-urlencoded\r\n", pbody, p)) return false;
+  if (p.status == 400) { loginError = "Passwort wurde abgelehnt."; return false; }
+  if (p.location.isEmpty()) { loginError = "Login-Schritt Passwort: Status " + String(p.status); return false; }
+  delay(2500);
+  // Resume -> code
+  String resumePath = p.location;
+  if (resumePath.startsWith("http")) { int q = resumePath.indexOf('/', 8); resumePath = resumePath.substring(q); }
+  Resp res;
+  if (!rawHttps("identity.porsche.com", "GET", resumePath, "", "", res)) return false;
+  int ci = res.location.indexOf("code=");
+  if (ci < 0) { loginError = "Kein Authorization-Code nach Login."; return false; }
+  String code = res.location.substring(ci + 5);
+  int amp = code.indexOf('&'); if (amp >= 0) code = code.substring(0, amp);
+  return exchangeCodeWeb(code);
+}
+
+void startWebLogin(const String& email, const String& password) {
+  authCookies.clear();
+  loginEmail = email; loginPassword = password;
+  loginError = ""; loginCaptcha = ""; loginNeedCaptcha = false; loginSuccess = false;
+  if (email.isEmpty() || password.isEmpty()) { loginError = "E-Mail und Passwort noetig."; return; }
+  String q = "/authorize?response_type=code&client_id=" + String(CLIENT_ID) +
+             "&redirect_uri=" + urlencode(REDIRECT_URI) + "&audience=" + urlencode(AUDIENCE) +
+             "&scope=" + urlencode(SCOPE) + "&state=openwb";
+  Resp r;
+  if (!rawHttps("identity.porsche.com", "GET", q, "", "", r)) return;
+  if (r.status != 302 || r.location.isEmpty()) { loginError = "Auth0 /authorize: Status " + String(r.status); return; }
+  int ci = r.location.indexOf("code=");
+  if (ci >= 0) {  // bereits eingeloggt
+    String code = r.location.substring(ci + 5); int amp = code.indexOf('&'); if (amp >= 0) code = code.substring(0, amp);
+    exchangeCodeWeb(code); return;
+  }
+  int si = r.location.indexOf("state=");
+  if (si < 0) { loginError = "Kein 'state' von Auth0."; return; }
+  loginState = r.location.substring(si + 6);
+  int amp = loginState.indexOf('&'); if (amp >= 0) loginState = loginState.substring(0, amp);
+  doIdentifierAndFinish("");
+}
+
 const char PAGE[] PROGMEM = R"HTML(
 <!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -261,6 +537,17 @@ border-radius:8px;padding:10px;max-height:180px;overflow:auto;white-space:pre-wr
 <div id="err" class="hint" style="margin-top:8px"></div>
 <div style="margin-top:12px"><button class="primary" onclick="act('refresh')">Jetzt aktualisieren</button>
 <button class="ghost" onclick="load()">Neu laden</button></div></div>
+<div class="card"><b>1 &middot; Porsche-Login</b>
+<div class="sub" style="margin:4px 0 8px">Direkt hier anmelden (erzeugt den Zugang) - kein PC-Tool noetig.</div>
+<label>E-Mail (Porsche ID)</label><input id="lmail">
+<label>Passwort</label><input id="lpass" type="password">
+<button class="primary" onclick="doLogin()">Anmelden</button>
+<div id="capbox" style="display:none;margin-top:10px">
+<div class="sub">Captcha ablesen und eingeben:</div>
+<img id="capimg" style="max-width:240px;background:#fff;border-radius:6px;margin:6px 0;display:block">
+<input id="capcode" placeholder="Captcha-Code" style="max-width:220px">
+<button class="primary" onclick="doCaptcha()">Absenden</button></div>
+<div id="lstat" class="hint" style="margin-top:8px"></div></div>
 <div class="card"><b>In openWB eintragen</b> &middot; Fahrzeug &rarr; SoC-Modul "HTTP"
 <div style="margin-top:8px">SoC-URL: <code id="usoc"></code> <button class="ghost" onclick="cp('usoc')">Kopieren</button></div>
 <div style="margin-top:6px">Range-URL: <code id="urange"></code> <button class="ghost" onclick="cp('urange')">Kopieren</button></div></div>
@@ -270,8 +557,15 @@ border-radius:8px;padding:10px;max-height:180px;overflow:auto;white-space:pre-wr
 <label>Porsche Refresh-Token (aus dem PC-Tool)</label><input name="refresh" placeholder="hier einfuegen zum Aendern">
 <label>VIN (optional)</label><input name="vin" id="fvin">
 <label>Aktualisierung (Minuten)</label><input name="interval" id="fint">
+<label>Update-URL (version.json, optional)</label><input name="update_url" id="fupd">
+<label>Update-Token (nur privates Repo, optional)</label><input name="update_token" type="password" placeholder="(leer = unveraendert)">
 <button class="primary" type="submit">Speichern &amp; neu starten</button></form>
 <div class="sub" style="margin-top:8px">Refresh-Token holen: PC-Tool &rarr; Tab 1 einloggen &rarr; "Refresh-Token kopieren".</div></div>
+<div class="card"><b>Firmware-Update</b>
+<div class="sub" style="margin:4px 0 8px">Installiert: v<span id="fw">?</span>. Update aus dem Git-Repo.</div>
+<div id="ustat" class="sub"></div>
+<button class="ghost" onclick="checkUpd()">Auf Updates pruefen</button>
+<button class="primary" id="ubtn" style="display:none" onclick="doUpd()">Update installieren</button></div>
 <div class="card"><b>Diagnose / Log</b><div class="row" style="margin:8px 0">
 <div class="metric"><div class="k">IP</div><div class="v" id="dip">-</div></div>
 <div class="metric"><div class="k">Signal</div><div class="v" id="drssi">-</div></div>
@@ -302,10 +596,33 @@ document.getElementById('dip').textContent=s.ip||'-';
 document.getElementById('drssi').textContent=(s.rssi||0)+' dBm';
 document.getElementById('dcode').textContent=s.http||'-';
 document.getElementById('dup').textContent=Math.floor((s.uptime||0)/60)+' min';
+document.getElementById('fw').textContent=s.fw||'?';
+if(s.update_status&&!document.getElementById('ustat').textContent)document.getElementById('ustat').textContent=s.update_status;
 if(document.activeElement.tagName!=='INPUT'){if(s.ssid)document.getElementById('fssid').value=s.ssid;
-document.getElementById('fvin').value=s.vin||'';document.getElementById('fint').value=s.interval||10;}
+document.getElementById('fvin').value=s.vin||'';document.getElementById('fint').value=s.interval||10;
+if(s.update_url!==undefined)document.getElementById('fupd').value=s.update_url||'';}
 document.getElementById('log').textContent=(s.log||[]).join('\n');
 }).catch(e=>{})}
+function post(b){return fetch('/action',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(r=>r.json())}
+function handleLogin(s){
+if(s.login_success){document.getElementById('capbox').style.display='none';
+document.getElementById('lstat').textContent='Login erfolgreich! Zugang gespeichert.';load();return;}
+if(s.need_captcha){document.getElementById('capbox').style.display='block';
+if(s.captcha)document.getElementById('capimg').src=s.captcha;
+document.getElementById('capcode').value='';document.getElementById('capcode').focus();}
+document.getElementById('lstat').textContent=s.login_error||''}
+function doLogin(){document.getElementById('lstat').textContent='Anmeldung laeuft (kann etwas dauern) ...';
+post(new URLSearchParams({do:'login',email:document.getElementById('lmail').value,
+password:document.getElementById('lpass').value})).then(handleLogin).catch(e=>{
+document.getElementById('lstat').textContent='Fehler bei der Anmeldung.'})}
+function doCaptcha(){document.getElementById('lstat').textContent='Pruefe Captcha ...';
+post(new URLSearchParams({do:'captcha',code:document.getElementById('capcode').value})).then(handleLogin).catch(e=>{})}
+function checkUpd(){document.getElementById('ustat').textContent='Pruefe ...';
+post('do=checkupdate').then(s=>{document.getElementById('ustat').textContent=s.update_status||'';
+document.getElementById('ubtn').style.display=s.update_available?'inline-block':'none'}).catch(e=>{})}
+function doUpd(){if(!confirm('Firmware jetzt aktualisieren? Das Geraet startet neu.'))return;
+document.getElementById('ustat').textContent='Update laeuft, Geraet startet neu ...';
+post('do=update').catch(e=>{})}
 load();setInterval(load,3000);
 </script></body></html>
 )HTML";
@@ -333,6 +650,10 @@ void handleStatus() {
   d["http"] = lastHttpCode;
   d["interval"] = cfgIntervalMin;
   d["uptime"] = (millis() - bootMs) / 1000;
+  d["fw"] = FW_VERSION;
+  d["update_status"] = updateStatus;
+  d["update_available"] = updateAvailable;
+  d["update_url"] = cfgUpdateUrl;
   JsonArray lg = d["log"].to<JsonArray>();
   for (int i = 0; i < LOG_LINES; i++) {
     String line = logBuf[(logHead + i) % LOG_LINES];
@@ -343,14 +664,25 @@ void handleStatus() {
 }
 
 void handleAction() {
-  String doWhat = server.arg("do");
-  if (doWhat == "refresh") {
-    logMsg("Manuelle Aktualisierung angefordert.");
-    fetchSoc();
-    server.send(200, "application/json", "{\"ok\":true}");
-  } else {
-    server.send(400, "application/json", "{\"ok\":false}");
-  }
+  String d = server.arg("do");
+  if (d == "refresh")          { logMsg("Manuelle Aktualisierung angefordert."); fetchSoc(); }
+  else if (d == "login")       { startWebLogin(server.arg("email"), server.arg("password")); }
+  else if (d == "captcha")     { doIdentifierAndFinish(server.arg("code")); }
+  else if (d == "checkupdate") { checkUpdate(); }
+  else if (d == "update")      { doUpdate(); }
+  else { server.send(400, "application/json", "{\"ok\":false}"); return; }
+
+  if (loginSuccess) fetchSoc();  // nach erfolgreichem Login gleich SoC holen
+  JsonDocument r;
+  r["ok"] = true;
+  r["login_success"]     = loginSuccess;
+  r["need_captcha"]      = loginNeedCaptcha;
+  r["captcha"]           = loginCaptcha;
+  r["login_error"]       = loginError;
+  r["update_status"]     = updateStatus;
+  r["update_available"]  = updateAvailable;
+  String out; serializeJson(r, out);
+  server.send(200, "application/json", out);
 }
 void handleSave() {
   String ssid = server.arg("ssid");
@@ -358,12 +690,16 @@ void handleSave() {
   String refresh = server.arg("refresh");
   String vin = server.arg("vin");
   uint32_t interval = server.arg("interval").toInt();
+  String updUrl = server.arg("update_url");
+  String updTok = server.arg("update_token");
   prefs.begin("porsche", false);
   if (ssid.length()) prefs.putString("ssid", ssid);
   if (pass.length()) prefs.putString("pass", pass);          // leer = altes behalten
   if (refresh.length()) prefs.putString("refresh", refresh); // leer = altes behalten
   prefs.putString("vin", vin);
   prefs.putUInt("interval", interval >= 1 ? interval : 10);
+  prefs.putString("upd_url", updUrl);
+  if (updTok.length()) prefs.putString("upd_tok", updTok);   // leer = altes behalten
   prefs.end();
   server.send(200, "text/html; charset=utf-8",
               "<meta charset='utf-8'>Gespeichert. Der ESP32 startet neu ...");
