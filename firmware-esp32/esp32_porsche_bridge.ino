@@ -34,10 +34,11 @@
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include <map>
+#include <time.h>
 #include "mbedtls/base64.h"
 
 // Firmware-Version (fuer den Online-Updater)
-static const char* FW_VERSION = "1.8.0";
+static const char* FW_VERSION = "1.9.0";
 // Standard-Update-Quelle (oeffentliches Firmware-Repo -> OTA ohne Token)
 static const char* DEFAULT_UPDATE_URL =
   "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/version.json";
@@ -103,6 +104,12 @@ uint32_t lastFetchMs = 0;
 bool   apMode = false;
 int    lastHttpCode = 0;
 uint32_t bootMs = 0;
+uint32_t lastFetchEpoch = 0;   // echter Unix-Zeitstempel des letzten SoC-Abrufs (via NTP)
+
+uint32_t nowEpoch() {
+  time_t t = time(nullptr);
+  return (t > 1700000000) ? (uint32_t)t : 0;   // >Nov 2023 = NTP synchronisiert
+}
 
 // ---- Log-Ringpuffer (fuers Troubleshooting im Web-UI) --------------------
 #define LOG_LINES 14
@@ -294,6 +301,7 @@ void fetchSoc() {
   }
   if (soc < 0) { lastError = "Kein BATTERY_LEVEL erhalten."; logMsg(lastError); return; }
   curSoc = soc; curRange = range; curOdometer = odo; curCharging = charging; lastError = ""; lastFetchMs = millis();
+  lastFetchEpoch = nowEpoch();
   pushHist(soc);
   logMsg("SoC aktualisiert: " + String(soc) + " %" +
          (range < 0 ? "" : ", " + String(range, 0) + " km"));
@@ -807,7 +815,10 @@ border-radius:12px;padding:12px;max-height:170px;overflow:auto;white-space:pre-w
 <div class="sub" style="margin-top:10px;font-weight:600;color:var(--fg)">Reichweite-Pattern <span style="font-weight:400;color:var(--mut)">(optional)</span></div>
 <div class="urlbox"><code>.range</code><button class="iconbtn" style="width:38px;height:38px" onclick="cpText('.range')" title="Kopieren"><svg class="ic"><use href="#i-copy"/></svg></button></div>
 <div class="sub" style="margin-top:10px;font-weight:600;color:var(--fg)">Kilometerstand-Pattern <span style="font-weight:400;color:var(--mut)">(optional)</span></div>
-<div class="urlbox"><code>.odometer</code><button class="iconbtn" style="width:38px;height:38px" onclick="cpText('.odometer')" title="Kopieren"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></div>
+<div class="urlbox"><code>.odometer</code><button class="iconbtn" style="width:38px;height:38px" onclick="cpText('.odometer')" title="Kopieren"><svg class="ic"><use href="#i-copy"/></svg></button></div>
+<div class="sub" style="margin-top:10px;font-weight:600;color:var(--fg)">Zeitstempel-Pattern <span style="font-weight:400;color:var(--mut)">(optional)</span></div>
+<div class="urlbox"><code>.ts</code><button class="iconbtn" style="width:38px;height:38px" onclick="cpText('.ts')" title="Kopieren"><svg class="ic"><use href="#i-copy"/></svg></button></div>
+<div class="sub" style="margin-top:6px">Feld &bdquo;Abfrage f&uuml;r Zeitstempel&ldquo; <b>leer lassen</b> oder <code>.ts</code> eintragen &ndash; <b>nicht</b> <code>.age_min</code>.</div></div></div>
 </div>
 
 <!-- ================= ADMIN ================= -->
@@ -1003,6 +1014,7 @@ void handleStatus() {
   d["charging"] = curCharging;
   d["conn"] = cfgConnMode;
   d["model"] = cfgModel;
+  if (lastFetchEpoch > 0) d["ts"] = lastFetchEpoch; else d["ts"] = nullptr;
   d["age_min"] = lastFetchMs == 0 ? -1 : (int)((millis() - lastFetchMs) / 60000);
   d["error"] = lastError;
   d["vin"] = resolvedVin.length() ? resolvedVin : cfgVin;
@@ -1102,6 +1114,7 @@ void setup() {
   } else {
     Serial.print("Verbunden. IP: ");
     Serial.println(WiFi.localIP());
+    configTime(0, 0, "pool.ntp.org", "time.google.com");   // NTP (UTC-Epoch)
   }
   server.on("/", handleRoot);
   server.on("/save", HTTP_POST, handleSave);

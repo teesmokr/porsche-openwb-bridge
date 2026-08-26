@@ -1,5 +1,5 @@
 {
-  "version": "1.8.0",
+  "version": "1.9.0",
   "bin": "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/firmware.bin",
-  "notes": "Fahrzeug-Illustration im Dashboard (waehlbar). Diagnose-Endpunkt /raw fuer die rohe Porsche-Antwort. OTA tokenlos ueber teesmokr/porsche-openwb-firmware."
+  "notes": "NTP-Uhr + echter Zeitstempel ts in /status (Zeitstempel-Pattern .ts). OTA tokenlos ueber teesmokr/porsche-openwb-firmware."
 }
