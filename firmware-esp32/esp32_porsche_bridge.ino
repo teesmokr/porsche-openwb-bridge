@@ -28,6 +28,7 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <HTTPUpdate.h>
+#include <Update.h>
 #include <WebServer.h>
 #include <DNSServer.h>
 #include <Preferences.h>
@@ -36,7 +37,7 @@
 #include "mbedtls/base64.h"
 
 // Firmware-Version (fuer den Online-Updater)
-static const char* FW_VERSION = "1.5.4";
+static const char* FW_VERSION = "1.6.0";
 // Standard-Update-Quelle (oeffentliches Firmware-Repo -> OTA ohne Token)
 static const char* DEFAULT_UPDATE_URL =
   "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/version.json";
@@ -797,7 +798,13 @@ verbindet sich mit deinem Netz. Danach meldest du dich mit deiner Porsche&nbsp;I
 <div class="sub">Installiert: v<span id="fw">?</span></div>
 <div id="ustat" class="sub" style="margin-top:6px"></div>
 <div class="row"><button class="btn ghost" onclick="checkUpd()"><svg class="ic"><use href="#i-refresh"/></svg>Auf Updates pruefen</button>
-<button class="btn primary" id="ubtn" style="display:none" onclick="doUpd()"><svg class="ic"><use href="#i-download"/></svg>Installieren</button></div></div>
+<button class="btn primary" id="ubtn" style="display:none" onclick="doUpd()"><svg class="ic"><use href="#i-download"/></svg>Installieren</button></div>
+<div style="border-top:1px solid var(--line);margin-top:16px;padding-top:14px">
+<div class="sub" style="font-weight:600;color:var(--fg)">Ohne Internet: Datei manuell hochladen</div>
+<div class="sub" style="margin:4px 0 8px">Die <b>firmware.bin</b> aus dem Release (nicht firmware-full.bin) waehlen.</div>
+<input type="file" id="fwfile" accept=".bin">
+<button class="btn primary" onclick="uploadFw()"><svg class="ic"><use href="#i-download"/></svg>Hochladen &amp; flashen</button>
+<div id="upstat" class="sub" style="margin-top:8px"></div></div></div>
 
 <div class="card">
 <div class="ctitle"><svg class="ic"><use href="#i-wrench"/></svg>Diagnose</div>
@@ -895,6 +902,16 @@ function checkUpd(){T('ustat').textContent='Pruefe ...';
 post('do=checkupdate').then(s=>{T('ustat').textContent=s.update_status||'';T('ubtn').style.display=s.update_available?'inline-flex':'none'}).catch(e=>{})}
 function doUpd(){if(!confirm('Firmware jetzt aktualisieren? Das Geraet startet neu.'))return;
 T('ustat').textContent='Update laeuft, Geraet startet neu ...';post('do=update').catch(e=>{})}
+function uploadFw(){var f=T('fwfile').files[0];
+if(!f){alert('Bitte eine .bin-Datei waehlen.');return;}
+if(!confirm('Firmware "'+f.name+'" hochladen und flashen? Das Geraet startet neu.'))return;
+var st=T('upstat');st.textContent='Lade hoch & flashe (0%) - Geraet NICHT trennen ...';
+var fd=new FormData();fd.append('firmware',f,f.name);
+var xhr=new XMLHttpRequest();xhr.open('POST','/upload',true);
+xhr.upload.onprogress=function(e){if(e.lengthComputable)st.textContent='Lade hoch & flashe ('+Math.round(e.loaded/e.total*100)+'%) - NICHT trennen ...';};
+xhr.onload=function(){try{var s=JSON.parse(xhr.responseText);st.textContent=s.ok?'Erfolgreich! Geraet startet neu ...':'Fehlgeschlagen - passt die Datei (firmware.bin)?';}catch(e){st.textContent='Geraet startet neu (Upload vermutlich ok).';}};
+xhr.onerror=function(){st.textContent='Verbindung verloren - Geraet startet vermutlich neu (Flash ok).';};
+xhr.send(fd);}
 load();setInterval(load,3000);
 </script></body></html>
 )HTML";
@@ -1009,6 +1026,26 @@ void setup() {
     server.send(200, "text/plain",
                 loginDebug.length() ? loginDebug : "noch keine Captcha-Diagnose vorhanden");
   });
+  // Manueller Firmware-Upload (lokal, ohne Git/Internet)
+  server.on("/upload", HTTP_POST,
+    []() {   // wird nach dem Upload aufgerufen
+      bool ok = !Update.hasError();
+      server.sendHeader("Connection", "close");
+      server.send(200, "application/json", String("{\"ok\":") + (ok ? "true" : "false") + "}");
+      if (ok) { delay(600); ESP.restart(); }
+    },
+    []() {   // empfaengt die Datei in Bloecken
+      HTTPUpload& up = server.upload();
+      if (up.status == UPLOAD_FILE_START) {
+        logMsg("Firmware-Upload: " + up.filename);
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN)) Update.printError(Serial);
+      } else if (up.status == UPLOAD_FILE_WRITE) {
+        if (Update.write(up.buf, up.currentSize) != up.currentSize) Update.printError(Serial);
+      } else if (up.status == UPLOAD_FILE_END) {
+        if (Update.end(true)) logMsg("Upload-Flash ok: " + String(up.totalSize) + " Bytes");
+        else Update.printError(Serial);
+      }
+    });
   server.onNotFound([]() {
     if (apMode) {   // Captive Portal: jede unbekannte Anfrage (auch OS-Checks) -> Konfigseite
       server.sendHeader("Location", "http://" + WiFi.softAPIP().toString() + "/", true);

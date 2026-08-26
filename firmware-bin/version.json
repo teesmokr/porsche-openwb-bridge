@@ -1,5 +1,5 @@
 {
-  "version": "1.5.4",
+  "version": "1.6.0",
   "bin": "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/firmware.bin",
-  "notes": "Fix: Reichweite auch bei ganzzahligen Kilometern erkannt. /range liefert nun einen Wert. OTA tokenlos ueber teesmokr/porsche-openwb-firmware."
+  "notes": "Manueller Firmware-Upload im Web-Interface (Datei hochladen & flashen, ohne Git/Internet). OTA tokenlos ueber teesmokr/porsche-openwb-firmware."
 }
