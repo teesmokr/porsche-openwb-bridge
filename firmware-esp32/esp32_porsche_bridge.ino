@@ -37,7 +37,7 @@
 #include "mbedtls/base64.h"
 
 // Firmware-Version (fuer den Online-Updater)
-static const char* FW_VERSION = "1.6.0";
+static const char* FW_VERSION = "1.7.0";
 // Standard-Update-Quelle (oeffentliches Firmware-Repo -> OTA ohne Token)
 static const char* DEFAULT_UPDATE_URL =
   "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/version.json";
@@ -70,6 +70,7 @@ Preferences prefs;
 String cfgSsid, cfgPass, cfgRefresh, cfgVin;
 uint32_t cfgIntervalMin = 10;
 String cfgUpdateUrl, cfgUpdateToken;   // Online-Updater (version.json + optional Token)
+String cfgConnMode = "http";           // openWB-Anbindung: "http" (/soc,/range) oder "json" (/status)
 
 // ---- OTA-Update-Status ---------------------------------------------------
 String updateStatus = "";
@@ -93,6 +94,7 @@ uint32_t tokenExpiresAtMs = 0;
 String resolvedVin;
 int    curSoc   = -1;      // -1 = noch kein Wert
 float  curRange = -1;
+float  curOdometer = -1;
 bool   curCharging = false;
 String lastError = "";
 uint32_t lastFetchMs = 0;
@@ -133,6 +135,7 @@ void loadConfig() {
   cfgIntervalMin = prefs.getUInt("interval", 10);
   cfgUpdateUrl   = prefs.getString("upd_url", "");
   cfgUpdateToken = prefs.getString("upd_tok", "");
+  cfgConnMode    = prefs.getString("conn", "http");
   if (cfgUpdateUrl.isEmpty()) cfgUpdateUrl = DEFAULT_UPDATE_URL;  // tokenlose OTA ab Werk
   prefs.end();
 }
@@ -262,11 +265,15 @@ void fetchSoc() {
   if (code != 200) { lastError = "SoC-Abruf HTTP " + String(code); logMsg(lastError); return; }
   JsonDocument doc;
   if (deserializeJson(doc, payload)) { lastError = "SoC-JSON-Fehler."; logMsg(lastError); return; }
-  int soc = -1; float range = -1; bool charging = false;
+  int soc = -1; float range = -1; float odo = -1; bool charging = false;
   for (JsonObject m : doc["measurements"].as<JsonArray>()) {
     const char* key = m["key"];
     if (!key) continue;
-    if (strcmp(key, "BATTERY_LEVEL") == 0) {
+    if (strcmp(key, "MILEAGE") == 0) {
+      JsonVariant km = m["value"]["kilometers"];
+      if (km.isNull()) km = m["value"]["value"];
+      if (km.is<int>() || km.is<float>()) odo = km.as<float>();
+    } else if (strcmp(key, "BATTERY_LEVEL") == 0) {
       if (m["value"]["percent"].is<float>() || m["value"]["percent"].is<int>())
         soc = (int)round(m["value"]["percent"].as<float>());
     } else if (strcmp(key, "E_RANGE") == 0 || strcmp(key, "RANGE") == 0) {
@@ -282,7 +289,7 @@ void fetchSoc() {
     }
   }
   if (soc < 0) { lastError = "Kein BATTERY_LEVEL erhalten."; logMsg(lastError); return; }
-  curSoc = soc; curRange = range; curCharging = charging; lastError = ""; lastFetchMs = millis();
+  curSoc = soc; curRange = range; curOdometer = odo; curCharging = charging; lastError = ""; lastFetchMs = millis();
   pushHist(soc);
   logMsg("SoC aktualisiert: " + String(soc) + " %" +
          (range < 0 ? "" : ", " + String(range, 0) + " km"));
@@ -747,13 +754,31 @@ border-radius:12px;padding:12px;max-height:170px;overflow:auto;white-space:pre-w
 
 <div class="card">
 <div class="ctitle"><svg class="ic"><use href="#i-link"/></svg>So verbindest du openWB</div>
-<div class="sub">Trage diese Adressen in openWB ein bei <b>Fahrzeug &rarr; SoC-Modul &bdquo;HTTP&ldquo;</b>:</div>
-<div class="sub" style="margin-top:10px;font-weight:600;color:var(--fg)">SoC-URL</div>
+<div class="row" style="align-items:center;justify-content:space-between;margin-top:6px">
+<div class="sub">Anbindung / openWB-SoC-Modul:</div>
+<select id="connsel" onchange="setConn(this.value)" style="width:auto;padding:8px 10px">
+<option value="http">HTTP (Standard)</option><option value="json">JSON</option></select></div>
+
+<div id="conn-http">
+<div class="sub" style="margin-top:10px">Modul <b>&bdquo;HTTP&ldquo;</b> bei <b>Fahrzeug &rarr; SoC</b> waehlen und eintragen:</div>
+<div class="sub" style="margin-top:8px;font-weight:600;color:var(--fg)">SoC-URL</div>
 <div class="urlbox"><code id="usoc"></code>
 <button class="iconbtn" style="width:38px;height:38px" onclick="cp('usoc')" title="Kopieren"><svg class="ic"><use href="#i-copy"/></svg></button></div>
 <div class="sub" style="margin-top:12px;font-weight:600;color:var(--fg)">Reichweite-URL <span style="font-weight:400;color:var(--mut)">(optional)</span></div>
 <div class="urlbox"><code id="urange"></code>
 <button class="iconbtn" style="width:38px;height:38px" onclick="cp('urange')" title="Kopieren"><svg class="ic"><use href="#i-copy"/></svg></button></div></div>
+
+<div id="conn-json" style="display:none">
+<div class="sub" style="margin-top:10px">Modul <b>&bdquo;JSON&ldquo;</b> bei <b>Fahrzeug &rarr; SoC</b> waehlen und eintragen:</div>
+<div class="sub" style="margin-top:8px;font-weight:600;color:var(--fg)">URL</div>
+<div class="urlbox"><code id="ustatus"></code>
+<button class="iconbtn" style="width:38px;height:38px" onclick="cp('ustatus')" title="Kopieren"><svg class="ic"><use href="#i-copy"/></svg></button></div>
+<div class="sub" style="margin-top:12px;font-weight:600;color:var(--fg)">SoC-Pattern</div>
+<div class="urlbox"><code>.soc</code><button class="iconbtn" style="width:38px;height:38px" onclick="cpText('.soc')" title="Kopieren"><svg class="ic"><use href="#i-copy"/></svg></button></div>
+<div class="sub" style="margin-top:10px;font-weight:600;color:var(--fg)">Reichweite-Pattern <span style="font-weight:400;color:var(--mut)">(optional)</span></div>
+<div class="urlbox"><code>.range</code><button class="iconbtn" style="width:38px;height:38px" onclick="cpText('.range')" title="Kopieren"><svg class="ic"><use href="#i-copy"/></svg></button></div>
+<div class="sub" style="margin-top:10px;font-weight:600;color:var(--fg)">Kilometerstand-Pattern <span style="font-weight:400;color:var(--mut)">(optional)</span></div>
+<div class="urlbox"><code>.odometer</code><button class="iconbtn" style="width:38px;height:38px" onclick="cpText('.odometer')" title="Kopieren"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></div>
 </div>
 
 <!-- ================= ADMIN ================= -->
@@ -841,6 +866,10 @@ function showAdmin(){T('view-dash').style.display='none';T('view-admin').style.d
 function showDash(){T('view-admin').style.display='none';T('view-dash').style.display='block';scrollTo(0,0)}
 function showLogin(){forceLogin=true;T('loginform').style.display='block';T('connectednote').style.display='none'}
 function cp(i){navigator.clipboard.writeText(T(i).textContent)}
+function cpText(t){navigator.clipboard.writeText(t)}
+function applyConn(m){T('conn-http').style.display=(m==='json')?'none':'block';
+T('conn-json').style.display=(m==='json')?'block':'none';if(T('connsel').value!==m)T('connsel').value=m}
+function setConn(m){applyConn(m);post('do=connmode&mode='+m).catch(e=>{})}
 function post(b){return fetch('/action',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(r=>r.json())}
 function act(d){post('do='+d).then(()=>setTimeout(load,700)).catch(e=>{})}
 function age(a){return a<0?'noch nie':(a==0?'gerade eben':a+' Min. her')}
@@ -866,6 +895,8 @@ else{T('loginform').style.display='block';T('connectednote').style.display='none
 if(s.ap){T('setuphint').style.display='block';if(!window._apOpened){window._apOpened=true;showAdmin()}}else{T('setuphint').style.display='none'}
 var h=location.host||'192.168.4.1';
 T('usoc').textContent='http://'+h+'/soc';T('urange').textContent='http://'+h+'/range';
+T('ustatus').textContent='http://'+h+'/status';
+if(document.activeElement.id!=='connsel')applyConn(s.conn||'http');
 T('dip').textContent=s.ip||'-';T('drssi').textContent=(s.rssi||0)+' dBm';
 T('dcode').textContent=s.http||'-';T('dup').textContent=Math.floor((s.uptime||0)/60)+' min';
 T('fw').textContent=s.fw||'?';
@@ -926,7 +957,9 @@ void handleStatus() {
   JsonDocument d;
   if (curSoc < 0) d["soc"] = nullptr; else d["soc"] = curSoc;
   if (curRange < 0) d["range"] = nullptr; else d["range"] = curRange;
+  if (curOdometer < 0) d["odometer"] = nullptr; else d["odometer"] = curOdometer;
   d["charging"] = curCharging;
+  d["conn"] = cfgConnMode;
   d["age_min"] = lastFetchMs == 0 ? -1 : (int)((millis() - lastFetchMs) / 60000);
   d["error"] = lastError;
   d["vin"] = resolvedVin.length() ? resolvedVin : cfgVin;
@@ -963,6 +996,13 @@ void handleAction() {
   else if (d == "captcha")     { doIdentifierAndFinish(server.arg("code")); }
   else if (d == "checkupdate") { checkUpdate(); }
   else if (d == "update")      { doUpdate(); }
+  else if (d == "connmode") {
+    String m = server.arg("mode");
+    if (m == "http" || m == "json") {
+      cfgConnMode = m;
+      prefs.begin("porsche", false); prefs.putString("conn", m); prefs.end();
+    }
+  }
   else { server.send(400, "application/json", "{\"ok\":false}"); return; }
 
   if (loginSuccess) fetchSoc();  // nach erfolgreichem Login gleich SoC holen
