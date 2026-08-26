@@ -1,0 +1,23 @@
+# Build-Artefakte
+build/
+dist/
+*.spec
+__pycache__/
+*.pyc
+
+# PyInstaller-Ausgaben
+*.exe
+
+# Geheimnisse / Zugangsdaten — NIE committen
+token*.json
+*.cfg
+.env
+secrets*
+
+# Betriebssystem
+.DS_Store
+Thumbs.db
+
+# Große Images
+*.img
+*.img.gz
