@@ -1,5 +1,5 @@
 {
-  "version": "1.9.0",
+  "version": "1.9.1",
   "bin": "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/firmware.bin",
-  "notes": "NTP-Uhr + echter Zeitstempel ts in /status (Zeitstempel-Pattern .ts). OTA tokenlos ueber teesmokr/porsche-openwb-firmware."
+  "notes": "Hinweis korrigiert: Zeitstempel-Feld in openWB leer lassen (openWB nutzt eigene Abrufzeit). OTA tokenlos ueber teesmokr/porsche-openwb-firmware."
 }

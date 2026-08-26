@@ -38,7 +38,7 @@
 #include "mbedtls/base64.h"
 
 // Firmware-Version (fuer den Online-Updater)
-static const char* FW_VERSION = "1.9.0";
+static const char* FW_VERSION = "1.9.1";
 // Standard-Update-Quelle (oeffentliches Firmware-Repo -> OTA ohne Token)
 static const char* DEFAULT_UPDATE_URL =
   "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/version.json";
@@ -816,9 +816,8 @@ border-radius:12px;padding:12px;max-height:170px;overflow:auto;white-space:pre-w
 <div class="urlbox"><code>.range</code><button class="iconbtn" style="width:38px;height:38px" onclick="cpText('.range')" title="Kopieren"><svg class="ic"><use href="#i-copy"/></svg></button></div>
 <div class="sub" style="margin-top:10px;font-weight:600;color:var(--fg)">Kilometerstand-Pattern <span style="font-weight:400;color:var(--mut)">(optional)</span></div>
 <div class="urlbox"><code>.odometer</code><button class="iconbtn" style="width:38px;height:38px" onclick="cpText('.odometer')" title="Kopieren"><svg class="ic"><use href="#i-copy"/></svg></button></div>
-<div class="sub" style="margin-top:10px;font-weight:600;color:var(--fg)">Zeitstempel-Pattern <span style="font-weight:400;color:var(--mut)">(optional)</span></div>
-<div class="urlbox"><code>.ts</code><button class="iconbtn" style="width:38px;height:38px" onclick="cpText('.ts')" title="Kopieren"><svg class="ic"><use href="#i-copy"/></svg></button></div>
-<div class="sub" style="margin-top:6px">Feld &bdquo;Abfrage f&uuml;r Zeitstempel&ldquo; <b>leer lassen</b> oder <code>.ts</code> eintragen &ndash; <b>nicht</b> <code>.age_min</code>.</div></div></div>
+<div class="sub" style="margin-top:12px;font-weight:600;color:var(--fg)">Zeitstempel</div>
+<div class="sub" style="margin-top:2px">Feld &bdquo;Abfrage f&uuml;r Zeitstempel&ldquo; am besten <b>leer lassen</b> &ndash; openWB nutzt dann automatisch die Abrufzeit. (Kein <code>.ts</code> oder <code>.age_min</code> eintragen.)</div></div></div>
 </div>
 
 <!-- ================= ADMIN ================= -->
