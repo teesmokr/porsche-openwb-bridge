@@ -1,5 +1,5 @@
 {
-  "version": "1.5.2",
+  "version": "1.5.3",
   "bin": "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/firmware.bin",
-  "notes": "Fix: Captcha-Bild aus Auth0 (base64/atob) wird dekodiert und angezeigt. Diagnose-Endpunkt /debug. OTA tokenlos ueber teesmokr/porsche-openwb-firmware."
+  "notes": "Reichweite-URL als eigenes Feld mit Kopier-Button. OTA tokenlos ueber teesmokr/porsche-openwb-firmware."
 }

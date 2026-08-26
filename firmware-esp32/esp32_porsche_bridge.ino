@@ -36,7 +36,7 @@
 #include "mbedtls/base64.h"
 
 // Firmware-Version (fuer den Online-Updater)
-static const char* FW_VERSION = "1.5.2";
+static const char* FW_VERSION = "1.5.3";
 // Standard-Update-Quelle (oeffentliches Firmware-Repo -> OTA ohne Token)
 static const char* DEFAULT_UPDATE_URL =
   "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/version.json";
@@ -743,11 +743,13 @@ border-radius:12px;padding:12px;max-height:170px;overflow:auto;white-space:pre-w
 
 <div class="card">
 <div class="ctitle"><svg class="ic"><use href="#i-link"/></svg>So verbindest du openWB</div>
-<div class="sub">Trage diese Adresse in openWB ein bei <b>Fahrzeug &rarr; SoC-Modul &bdquo;HTTP&ldquo;</b>:</div>
+<div class="sub">Trage diese Adressen in openWB ein bei <b>Fahrzeug &rarr; SoC-Modul &bdquo;HTTP&ldquo;</b>:</div>
+<div class="sub" style="margin-top:10px;font-weight:600;color:var(--fg)">SoC-URL</div>
 <div class="urlbox"><code id="usoc"></code>
 <button class="iconbtn" style="width:38px;height:38px" onclick="cp('usoc')" title="Kopieren"><svg class="ic"><use href="#i-copy"/></svg></button></div>
-<div class="sub" style="margin-top:8px">Reichweite (optional): <span class="link" onclick="cp('urange')">Adresse kopieren</span>
-<span id="urange" style="display:none"></span></div></div>
+<div class="sub" style="margin-top:12px;font-weight:600;color:var(--fg)">Reichweite-URL <span style="font-weight:400;color:var(--mut)">(optional)</span></div>
+<div class="urlbox"><code id="urange"></code>
+<button class="iconbtn" style="width:38px;height:38px" onclick="cp('urange')" title="Kopieren"><svg class="ic"><use href="#i-copy"/></svg></button></div></div>
 </div>
 
 <!-- ================= ADMIN ================= -->
