@@ -37,7 +37,7 @@
 #include "mbedtls/base64.h"
 
 // Firmware-Version (fuer den Online-Updater)
-static const char* FW_VERSION = "1.7.0";
+static const char* FW_VERSION = "1.8.0";
 // Standard-Update-Quelle (oeffentliches Firmware-Repo -> OTA ohne Token)
 static const char* DEFAULT_UPDATE_URL =
   "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/version.json";
@@ -71,6 +71,7 @@ String cfgSsid, cfgPass, cfgRefresh, cfgVin;
 uint32_t cfgIntervalMin = 10;
 String cfgUpdateUrl, cfgUpdateToken;   // Online-Updater (version.json + optional Token)
 String cfgConnMode = "http";           // openWB-Anbindung: "http" (/soc,/range) oder "json" (/status)
+String cfgModel = "macan";             // Fahrzeug-Illustration im Dashboard
 
 // ---- OTA-Update-Status ---------------------------------------------------
 String updateStatus = "";
@@ -87,6 +88,7 @@ String loginError;        // Klartext-Fehler fuer die Web-UI
 bool   loginNeedCaptcha = false;
 bool   loginSuccess = false;
 String loginDebug;        // Diagnose: Ausschnitte der Auth0-Antwort, falls Captcha nicht lesbar
+String lastApiRaw;        // Diagnose: rohe Porsche-Fahrzeugantwort (fuer /raw)
 
 // ---- Laufzeit-Status -----------------------------------------------------
 String accessToken;
@@ -136,6 +138,7 @@ void loadConfig() {
   cfgUpdateUrl   = prefs.getString("upd_url", "");
   cfgUpdateToken = prefs.getString("upd_tok", "");
   cfgConnMode    = prefs.getString("conn", "http");
+  cfgModel       = prefs.getString("model", "macan");
   if (cfgUpdateUrl.isEmpty()) cfgUpdateUrl = DEFAULT_UPDATE_URL;  // tokenlose OTA ab Werk
   prefs.end();
 }
@@ -263,6 +266,7 @@ void fetchSoc() {
     payload = apiGet(path, code);
   }
   if (code != 200) { lastError = "SoC-Abruf HTTP " + String(code); logMsg(lastError); return; }
+  lastApiRaw = payload.substring(0, payload.length() > 3800 ? 3800 : payload.length());  // Diagnose /raw
   JsonDocument doc;
   if (deserializeJson(doc, payload)) { lastError = "SoC-JSON-Fehler."; logMsg(lastError); return; }
   int soc = -1; float range = -1; float odo = -1; bool charging = false;
@@ -666,6 +670,10 @@ border-radius:12px;padding:12px;max-height:170px;overflow:auto;white-space:pre-w
 #capimg{max-width:240px;background:#fff;border-radius:10px;margin:10px 0;display:block;padding:6px}
 .link{color:var(--red);cursor:pointer;font-weight:600;font-size:13.5px}
 .adminhead{display:flex;align-items:center;gap:12px;padding:18px 2px}
+.carwrap{display:flex;justify-content:center;padding:2px 0 12px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.carimg{width:230px;max-width:78%;height:auto}
+.cb{fill:var(--fg);opacity:.9}.cw{fill:var(--surf)}.cwh{fill:var(--fg)}.ct{fill:var(--surf)}
+.chub{fill:var(--red)}.rail{stroke:var(--red);stroke-width:3;fill:none;stroke-linecap:round}
 .chart{width:100%;height:100px;display:block}
 .chart .line{fill:none;stroke:var(--red);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
 .chart .area{fill:url(#agrad);opacity:.2}
@@ -701,6 +709,27 @@ border-radius:12px;padding:12px;max-height:170px;overflow:auto;white-space:pre-w
 <symbol id="i-wave" viewBox="0 0 24 24"><path d="M2 12s3-6 10-6 10 6 10 6"/><circle cx="12" cy="13" r="3"/></symbol>
 <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3 18v3h3l6.5-6.3a4 4 0 0 0 5.2-5.4l-2.5 2.5-2.3-2.3 2.5-2.5z"/></symbol>
 <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 14l4-5 3 3 5-7"/></symbol>
+<symbol id="car-taycan" viewBox="0 0 260 110">
+<path class="cb" d="M14,84 C16,67 28,63 42,62 L80,44 C94,36 114,33 140,33 C170,33 192,40 208,55 L232,63 C244,66 248,71 248,84 Z"/>
+<path class="cw" d="M98,47 L122,37 C134,35 152,36 162,42 L174,53 L100,53 Z"/>
+<circle class="cwh" cx="68" cy="88" r="16"/><circle class="ct" cx="68" cy="88" r="8"/><circle class="chub" cx="68" cy="88" r="3"/>
+<circle class="cwh" cx="206" cy="88" r="16"/><circle class="ct" cx="206" cy="88" r="8"/><circle class="chub" cx="206" cy="88" r="3"/></symbol>
+<symbol id="car-taycan_ct" viewBox="0 0 260 110">
+<path class="cb" d="M14,84 C16,67 28,63 42,62 L78,43 C92,35 114,32 152,32 C188,32 208,34 222,41 L236,53 L248,61 C252,67 252,78 248,84 Z"/>
+<path class="rail" d="M112,31 L208,31"/>
+<path class="cw" d="M98,47 L120,35 C132,33 194,33 206,41 L210,52 L100,52 Z"/>
+<circle class="cwh" cx="68" cy="88" r="16"/><circle class="ct" cx="68" cy="88" r="8"/><circle class="chub" cx="68" cy="88" r="3"/>
+<circle class="cwh" cx="206" cy="88" r="16"/><circle class="ct" cx="206" cy="88" r="8"/><circle class="chub" cx="206" cy="88" r="3"/></symbol>
+<symbol id="car-macan" viewBox="0 0 260 110">
+<path class="cb" d="M22,82 C24,56 37,50 52,49 L72,26 C82,20 100,18 126,18 C156,18 178,22 192,34 L214,48 C230,53 234,58 234,82 Z"/>
+<path class="cw" d="M84,44 L104,25 C114,21 150,21 168,27 L182,45 Z"/>
+<circle class="cwh" cx="74" cy="85" r="19"/><circle class="ct" cx="74" cy="85" r="9.5"/><circle class="chub" cx="74" cy="85" r="3.5"/>
+<circle class="cwh" cx="198" cy="85" r="19"/><circle class="ct" cx="198" cy="85" r="9.5"/><circle class="chub" cx="198" cy="85" r="3.5"/></symbol>
+<symbol id="car-cayenne" viewBox="0 0 260 110">
+<path class="cb" d="M16,82 C18,54 33,48 50,47 L72,24 C84,18 106,16 142,16 C182,16 208,20 222,32 L246,48 C256,53 256,58 248,82 Z"/>
+<path class="cw" d="M80,42 L104,22 C114,18 166,18 186,24 L202,44 Z"/>
+<circle class="cwh" cx="74" cy="85" r="20"/><circle class="ct" cx="74" cy="85" r="10"/><circle class="chub" cx="74" cy="85" r="3.5"/>
+<circle class="cwh" cx="206" cy="85" r="20"/><circle class="ct" cx="206" cy="85" r="10"/><circle class="chub" cx="206" cy="85" r="3.5"/></symbol>
 </defs></svg>
 
 <div class="wrap">
@@ -712,7 +741,7 @@ border-radius:12px;padding:12px;max-height:170px;overflow:auto;white-space:pre-w
 
 <!-- ================= DASHBOARD ================= -->
 <div id="view-dash">
-<div class="card"><div class="hero">
+<div class="card"><div class="carwrap" id="carwrap"><svg class="carimg" viewBox="0 0 260 110"><use id="caruse" href="#car-macan"/></svg></div><div class="hero">
 <div class="gaugewrap">
 <div class="bolt" id="bolt"><svg class="ic"><use href="#i-bolt"/></svg></div>
 <svg class="gauge" width="172" height="172" viewBox="0 0 120 120">
@@ -798,6 +827,14 @@ verbindet sich mit deinem Netz. Danach meldest du dich mit deiner Porsche&nbsp;I
 </div>
 <div class="card">
 <div class="ctitle"><svg class="ic"><use href="#i-car"/></svg>Fahrzeug &amp; Abruf</div>
+<label>Fahrzeug (Bild im Dashboard)</label>
+<select id="modelsel" onchange="setModel(this.value)">
+<option value="macan">Macan Electric</option>
+<option value="taycan">Taycan</option>
+<option value="taycan_ct">Taycan Cross / Sport Turismo</option>
+<option value="cayenne">Cayenne Electric</option>
+<option value="none">&ndash; kein Bild &ndash;</option>
+</select>
 <label>VIN (nur bei mehreren Fahrzeugen)</label><input name="vin" id="fvin">
 <label>Porsche-Abruf-Intervall</label>
 <select name="interval" id="fint">
@@ -870,6 +907,10 @@ function cpText(t){navigator.clipboard.writeText(t)}
 function applyConn(m){T('conn-http').style.display=(m==='json')?'none':'block';
 T('conn-json').style.display=(m==='json')?'block':'none';if(T('connsel').value!==m)T('connsel').value=m}
 function setConn(m){applyConn(m);post('do=connmode&mode='+m).catch(e=>{})}
+function applyModel(m){var w=T('carwrap');if(!m||m==='none'){w.style.display='none';return}
+w.style.display='flex';T('caruse').setAttribute('href','#car-'+m);
+if(T('modelsel')&&T('modelsel').value!==m)T('modelsel').value=m}
+function setModel(m){applyModel(m);post('do=model&model='+m).catch(e=>{})}
 function post(b){return fetch('/action',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(r=>r.json())}
 function act(d){post('do='+d).then(()=>setTimeout(load,700)).catch(e=>{})}
 function age(a){return a<0?'noch nie':(a==0?'gerade eben':a+' Min. her')}
@@ -897,6 +938,7 @@ var h=location.host||'192.168.4.1';
 T('usoc').textContent='http://'+h+'/soc';T('urange').textContent='http://'+h+'/range';
 T('ustatus').textContent='http://'+h+'/status';
 if(document.activeElement.id!=='connsel')applyConn(s.conn||'http');
+if(document.activeElement.id!=='modelsel')applyModel(s.model||'macan');
 T('dip').textContent=s.ip||'-';T('drssi').textContent=(s.rssi||0)+' dBm';
 T('dcode').textContent=s.http||'-';T('dup').textContent=Math.floor((s.uptime||0)/60)+' min';
 T('fw').textContent=s.fw||'?';
@@ -960,6 +1002,7 @@ void handleStatus() {
   if (curOdometer < 0) d["odometer"] = nullptr; else d["odometer"] = curOdometer;
   d["charging"] = curCharging;
   d["conn"] = cfgConnMode;
+  d["model"] = cfgModel;
   d["age_min"] = lastFetchMs == 0 ? -1 : (int)((millis() - lastFetchMs) / 60000);
   d["error"] = lastError;
   d["vin"] = resolvedVin.length() ? resolvedVin : cfgVin;
@@ -1002,6 +1045,10 @@ void handleAction() {
       cfgConnMode = m;
       prefs.begin("porsche", false); prefs.putString("conn", m); prefs.end();
     }
+  }
+  else if (d == "model") {
+    cfgModel = server.arg("model");
+    prefs.begin("porsche", false); prefs.putString("model", cfgModel); prefs.end();
   }
   else { server.send(400, "application/json", "{\"ok\":false}"); return; }
 
@@ -1065,6 +1112,10 @@ void setup() {
   server.on("/debug", []() {
     server.send(200, "text/plain",
                 loginDebug.length() ? loginDebug : "noch keine Captcha-Diagnose vorhanden");
+  });
+  server.on("/raw", []() {
+    server.send(200, "text/plain",
+                lastApiRaw.length() ? lastApiRaw : "noch keine Fahrzeugdaten abgerufen");
   });
   // Manueller Firmware-Upload (lokal, ohne Git/Internet)
   server.on("/upload", HTTP_POST,

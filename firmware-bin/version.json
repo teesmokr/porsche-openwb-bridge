@@ -1,5 +1,5 @@
 {
-  "version": "1.7.0",
+  "version": "1.8.0",
   "bin": "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/firmware.bin",
-  "notes": "JSON-Anbindung als Alternative (umschaltbar HTTP/JSON); /status liefert soc/range/odometer. OTA tokenlos ueber teesmokr/porsche-openwb-firmware."
+  "notes": "Fahrzeug-Illustration im Dashboard (waehlbar). Diagnose-Endpunkt /raw fuer die rohe Porsche-Antwort. OTA tokenlos ueber teesmokr/porsche-openwb-firmware."
 }
