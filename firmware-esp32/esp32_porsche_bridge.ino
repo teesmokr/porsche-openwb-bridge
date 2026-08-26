@@ -33,9 +33,10 @@
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include <map>
+#include "mbedtls/base64.h"
 
 // Firmware-Version (fuer den Online-Updater)
-static const char* FW_VERSION = "1.5.1";
+static const char* FW_VERSION = "1.5.2";
 // Standard-Update-Quelle (oeffentliches Firmware-Repo -> OTA ohne Token)
 static const char* DEFAULT_UPDATE_URL =
   "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/version.json";
@@ -83,6 +84,7 @@ String loginCaptcha;      // data-URI des Captcha-Bildes (fuer die Web-UI)
 String loginError;        // Klartext-Fehler fuer die Web-UI
 bool   loginNeedCaptcha = false;
 bool   loginSuccess = false;
+String loginDebug;        // Diagnose: Ausschnitte der Auth0-Antwort, falls Captcha nicht lesbar
 
 // ---- Laufzeit-Status -----------------------------------------------------
 String accessToken;
@@ -434,19 +436,60 @@ bool rawHttps(const String& host, const String& method, const String& path,
   return true;
 }
 
+// Sucht ein data:image nach einem Schluessel in einem C-String (0-terminiert)
+String findImageIn(const char* s, const char* key) {
+  const char* p = strstr(s, key);
+  if (!p) return "";
+  const char* d = strstr(p, "data:image");
+  if (!d) return "";
+  const char* e = strchr(d, '"');
+  if (!e || e <= d) return "";
+  size_t n = e - d;
+  String u; u.reserve(n);
+  for (size_t k = 0; k < n; k++) u += d[k];
+  u.replace("\\/", "/");
+  return u;
+}
+
 String extractCaptcha(const String& html) {
-  int i = html.indexOf("\"image\":\"data:image");
-  if (i >= 0) {
-    int s = html.indexOf("data:image", i);
-    int e = html.indexOf('"', s);
-    if (e > s) { String u = html.substring(s, e); u.replace("\\/", "/"); return u; }
+  // 1) direktes data-URI (z.B. "image":"data:image..." oder src="data:image...")
+  String u = findImageIn(html.c_str(), "\"image\":\"data:image");
+  if (u.length()) return u;
+  u = findImageIn(html.c_str(), "src=\"data:image");
+  if (u.length()) return u;
+
+  // 2) Auth0-ACUL: Kontext steckt base64-kodiert in atob("...") -> dekodieren und darin suchen
+  int a = html.indexOf("atob(\"");
+  char q = '"';
+  if (a < 0) { a = html.indexOf("atob('"); q = '\''; }
+  if (a >= 0) {
+    int bs = a + 6;
+    int be = html.indexOf(q, bs);
+    if (be > bs && (be - bs) < 160000) {
+      String b64 = html.substring(bs, be);
+      size_t need = 0;
+      mbedtls_base64_decode(nullptr, 0, &need, (const unsigned char*)b64.c_str(), b64.length());
+      if (need > 0 && need < 160000) {
+        uint8_t* buf = (uint8_t*)malloc(need + 1);
+        if (buf) {
+          size_t got = 0;
+          if (mbedtls_base64_decode(buf, need, &got, (const unsigned char*)b64.c_str(), b64.length()) == 0) {
+            buf[got] = 0;
+            String r = findImageIn((const char*)buf, "\"image\":\"");
+            if (!r.length()) r = findImageIn((const char*)buf, "data:image");
+            free(buf);
+            if (r.length()) return r;
+          } else {
+            free(buf);
+          }
+        }
+      }
+    }
   }
-  i = html.indexOf("src=\"data:image");
-  if (i >= 0) {
-    int s = html.indexOf("data:image", i);
-    int e = html.indexOf('"', s);
-    if (e > s) return html.substring(s, e);
-  }
+
+  // 3) Inline-SVG
+  int i = html.indexOf("<svg");
+  if (i >= 0) { int e = html.indexOf("</svg>", i); if (e > i) return html.substring(i, e + 6); }
   return "";
 }
 
@@ -483,7 +526,19 @@ bool doIdentifierAndFinish(const String& captchaCode) {
     loginCaptcha = extractCaptcha(r.body);
     loginNeedCaptcha = true;
     loginError = captchaCode.length() ? "Captcha war falsch, bitte erneut." : "Captcha erforderlich.";
-    if (loginCaptcha.isEmpty()) loginError = "Captcha noetig, Bild nicht lesbar.";
+    if (loginCaptcha.isEmpty()) {
+      loginError = "Captcha noetig, Bild nicht lesbar. Bitte /debug oeffnen und mir schicken.";
+      // Diagnose: Kontext rund um relevante Schluessel sammeln (max ~4 KB)
+      loginDebug = "len=" + String(r.body.length()) + "\n";
+      const char* keys[] = {"captcha", "atob(", "data:image", "<svg", "\"image\""};
+      for (unsigned k = 0; k < 5; k++) {
+        int p = r.body.indexOf(keys[k]);
+        loginDebug += String(keys[k]) + " @ " + String(p) + "\n";
+        if (p >= 0 && loginDebug.length() < 3500) {
+          loginDebug += r.body.substring(p, min((int)r.body.length(), p + 240)) + "\n---\n";
+        }
+      }
+    }
     return false;
   }
   // Passwort
@@ -945,6 +1000,10 @@ void setup() {
   server.on("/range", handleRange);
   server.on("/status", handleStatus);
   server.on("/action", HTTP_POST, handleAction);
+  server.on("/debug", []() {
+    server.send(200, "text/plain",
+                loginDebug.length() ? loginDebug : "noch keine Captcha-Diagnose vorhanden");
+  });
   server.onNotFound([]() {
     if (apMode) {   // Captive Portal: jede unbekannte Anfrage (auch OS-Checks) -> Konfigseite
       server.sendHeader("Location", "http://" + WiFi.softAPIP().toString() + "/", true);

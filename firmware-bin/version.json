@@ -1,5 +1,5 @@
 {
-  "version": "1.5.1",
+  "version": "1.5.2",
   "bin": "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/firmware.bin",
-  "notes": "Vollstaendiges Flash-Image im Release (firmware-full.bin, Offset 0x0) fuer Erst-Flash. OTA tokenlos ueber teesmokr/porsche-openwb-firmware. Funktional wie 1.5.0."
+  "notes": "Fix: Captcha-Bild aus Auth0 (base64/atob) wird dekodiert und angezeigt. Diagnose-Endpunkt /debug. OTA tokenlos ueber teesmokr/porsche-openwb-firmware."
 }
