@@ -1,5 +1,5 @@
 {
-  "version": "1.9.1",
+  "version": "1.9.2",
   "bin": "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/firmware.bin",
-  "notes": "Hinweis korrigiert: Zeitstempel-Feld in openWB leer lassen (openWB nutzt eigene Abrufzeit). OTA tokenlos ueber teesmokr/porsche-openwb-firmware."
+  "notes": "Hinweis: Kilometerstand wird vom openWB-JSON-Modul erst ab kuenftiger openWB-Version uebernommen (2.1.9/2.2.x noch nicht). OTA tokenlos ueber teesmokr/porsche-openwb-firmware."
 }
