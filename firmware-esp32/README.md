@@ -53,6 +53,23 @@ arduino-cli compile --fqbn esp32:esp32:esp32 esp32_porsche_bridge
 arduino-cli upload -p COM3 --fqbn esp32:esp32:esp32 esp32_porsche_bridge
 ```
 
+### Fertiges Image (empfohlen für den Erst-Flash)
+
+Im **GitHub-Release** liegt `firmware-full.bin` (Bootloader + Partitionen + App).
+Das ist der einfachste Weg für einen frischen ESP32 — **ohne Arduino IDE**:
+
+- **Web-Flasher (Chrome/Edge):** https://espressif.github.io/esptool-js/ →
+  *Connect* → *Erase Flash* → Datei `firmware-full.bin`, **Flash Address `0x0`**
+  → *Program*.
+- **esptool:**
+  ```
+  esptool.py --chip esp32 -p COM3 erase_flash
+  esptool.py --chip esp32 -p COM3 write_flash 0x0 firmware-full.bin
+  ```
+
+> Achtung: Die **App-Datei `firmware.bin`** allein ist **nur fürs OTA-Update**
+> gedacht (Bootloader/Partitionen fehlen) — nicht für den Erst-Flash.
+
 ## Erste Einrichtung (Web-Interface)
 
 1. Nach dem ersten Start öffnet der ESP32 automatisch einen **Setup-Hotspot**

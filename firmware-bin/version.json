@@ -1,5 +1,5 @@
 {
-  "version": "1.5.0",
+  "version": "1.5.1",
   "bin": "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/firmware.bin",
-  "notes": "Erst-Einrichtung: Setup-Hotspot mit Captive Portal (Konfig oeffnet sich automatisch), WLAN-Setup zuerst. Auslieferung tokenlos ueber teesmokr/porsche-openwb-firmware."
+  "notes": "Vollstaendiges Flash-Image im Release (firmware-full.bin, Offset 0x0) fuer Erst-Flash. OTA tokenlos ueber teesmokr/porsche-openwb-firmware. Funktional wie 1.5.0."
 }

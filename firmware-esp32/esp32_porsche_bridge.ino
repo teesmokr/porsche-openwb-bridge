@@ -35,7 +35,7 @@
 #include <map>
 
 // Firmware-Version (fuer den Online-Updater)
-static const char* FW_VERSION = "1.5.0";
+static const char* FW_VERSION = "1.5.1";
 // Standard-Update-Quelle (oeffentliches Firmware-Repo -> OTA ohne Token)
 static const char* DEFAULT_UPDATE_URL =
   "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/version.json";
