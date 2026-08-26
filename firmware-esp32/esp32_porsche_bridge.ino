@@ -34,7 +34,7 @@
 #include <map>
 
 // Firmware-Version (fuer den Online-Updater)
-static const char* FW_VERSION = "1.3.0";
+static const char* FW_VERSION = "1.4.0";
 // Standard-Update-Quelle (oeffentliches Firmware-Repo -> OTA ohne Token)
 static const char* DEFAULT_UPDATE_URL =
   "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/version.json";
@@ -104,6 +104,16 @@ void logMsg(const String& m) {
   logBuf[logHead] = m;
   logHead = (logHead + 1) % LOG_LINES;
   Serial.println(m);
+}
+
+// ---- SoC-Verlauf (fuers Ladeverlauf-Diagramm) ----------------------------
+#define HIST_N 60
+int8_t socHist[HIST_N];
+int histCount = 0, histHead = 0;
+void pushHist(int v) {
+  socHist[histHead] = (int8_t)v;
+  histHead = (histHead + 1) % HIST_N;
+  if (histCount < HIST_N) histCount++;
 }
 
 // ==========================================================================
@@ -259,6 +269,7 @@ void fetchSoc() {
   }
   if (soc < 0) { lastError = "Kein BATTERY_LEVEL erhalten."; logMsg(lastError); return; }
   curSoc = soc; curRange = range; curCharging = charging; lastError = ""; lastFetchMs = millis();
+  pushHist(soc);
   logMsg("SoC aktualisiert: " + String(soc) + " %" +
          (range < 0 ? "" : ", " + String(range, 0) + " km"));
 }
@@ -519,9 +530,11 @@ const char PAGE[] PROGMEM = R"HTML(
 --red:#d5001c;--red2:#ff2038;--ok:#12a150;--warn:#c67a00;--err:#d5001c;--track:#e6e8ee;--shadow:0 1px 3px rgba(20,20,30,.08)}
 :root.dark{--bg:#0a0a0c;--surf:#111114;--surf2:#17171c;--line:#2a2a31;--fg:#f4f4f6;
 --mut:#8b8b93;--track:#232329;--shadow:none}
-*{box-sizing:border-box}html,body{margin:0}
+*{box-sizing:border-box}html,body{margin:0;overflow-x:hidden;max-width:100%}
+.urlbox code{min-width:0}
 body{background:var(--bg);color:var(--fg);font-family:"Helvetica Neue",Arial,system-ui,sans-serif;
--webkit-font-smoothing:antialiased;transition:background .3s,color .3s}
+-webkit-font-smoothing:antialiased;transition:background .3s,color .3s;overflow-x:hidden}
+svg{max-width:100%}
 .wrap{max-width:760px;margin:0 auto;padding:0 16px 40px}
 .ic{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .top{display:flex;align-items:center;justify-content:space-between;padding:18px 2px}
@@ -558,9 +571,9 @@ font-weight:700;font-size:14px;margin-top:4px}
 .pill.warn{background:rgba(198,122,0,.14);color:var(--warn)}
 .pill.err{background:rgba(213,0,28,.12);color:var(--err)}
 label{display:block;margin:14px 0 6px;font-size:13px;font-weight:600;color:var(--fg)}
-input{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:12px;
-background:var(--bg);color:var(--fg);font-size:15px;outline:none}
-input:focus{border-color:var(--red);background:var(--surf)}
+input,select{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:12px;
+background:var(--bg);color:var(--fg);font-size:15px;outline:none;font-family:inherit}
+input:focus,select:focus{border-color:var(--red);background:var(--surf)}
 .btn{display:inline-flex;align-items:center;gap:8px;font-family:inherit;border:0;border-radius:12px;
 padding:12px 18px;font-size:14px;font-weight:700;cursor:pointer;margin-top:12px}
 .btn .ic{width:18px;height:18px}
@@ -579,6 +592,20 @@ border-radius:12px;padding:12px;max-height:170px;overflow:auto;white-space:pre-w
 #capimg{max-width:240px;background:#fff;border-radius:10px;margin:10px 0;display:block;padding:6px}
 .link{color:var(--red);cursor:pointer;font-weight:600;font-size:13.5px}
 .adminhead{display:flex;align-items:center;gap:12px;padding:18px 2px}
+.chart{width:100%;height:100px;display:block}
+.chart .line{fill:none;stroke:var(--red);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
+.chart .area{fill:url(#agrad);opacity:.2}
+.chart .grid{stroke:var(--line);stroke-width:1}
+.chartlab{display:flex;justify-content:space-between;color:var(--mut);font-size:11px;margin-top:6px}
+.swatches{display:flex;gap:12px;margin-top:10px}
+.sw{width:34px;height:34px;border-radius:50%;cursor:pointer;border:2px solid var(--line);box-shadow:var(--shadow)}
+.sw.active{border-color:var(--fg);transform:scale(1.08)}
+@media(max-width:560px){
+.wrap{padding:0 12px 32px}.card{padding:16px;border-radius:16px}
+.g-center b{font-size:44px}.gaugewrap{width:150px;height:150px;margin:0 auto}
+.hero{gap:14px;flex-direction:column;align-items:stretch}.hstats{min-width:0}
+.btn{width:100%;justify-content:center}.iconbtn{width:46px;height:46px}
+.tile{min-width:0}.tile .v,.tile .tv{font-size:15px;min-width:0;word-break:break-word}}
 </style></head><body>
 <svg width="0" height="0" style="position:absolute"><defs>
 <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
@@ -599,6 +626,7 @@ border-radius:12px;padding:12px;max-height:170px;overflow:auto;white-space:pre-w
 <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M17 6l3 3M15 8l2 2"/></symbol>
 <symbol id="i-wave" viewBox="0 0 24 24"><path d="M2 12s3-6 10-6 10 6 10 6"/><circle cx="12" cy="13" r="3"/></symbol>
 <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3 18v3h3l6.5-6.3a4 4 0 0 0 5.2-5.4l-2.5 2.5-2.3-2.3 2.5-2.5z"/></symbol>
+<symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 14l4-5 3 3 5-7"/></symbol>
 </defs></svg>
 
 <div class="wrap">
@@ -615,7 +643,7 @@ border-radius:12px;padding:12px;max-height:170px;overflow:auto;white-space:pre-w
 <div class="bolt" id="bolt"><svg class="ic"><use href="#i-bolt"/></svg></div>
 <svg class="gauge" width="172" height="172" viewBox="0 0 120 120">
 <defs><linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
-<stop offset="0" stop-color="#ff2038"/><stop offset="1" stop-color="#d5001c"/></linearGradient></defs>
+<stop id="gs1" offset="0" stop-color="#ff2038"/><stop id="gs2" offset="1" stop-color="#d5001c"/></linearGradient></defs>
 <circle class="g-track" cx="60" cy="60" r="52"/><circle id="ring" class="g-val" cx="60" cy="60" r="52"/></svg>
 <div class="g-center"><b id="soc">&ndash;</b><span class="lab">Ladestand</span></div></div>
 <div class="hstats">
@@ -627,6 +655,14 @@ border-radius:12px;padding:12px;max-height:170px;overflow:auto;white-space:pre-w
 <button class="btn primary" onclick="act('refresh')"><svg class="ic"><use href="#i-refresh"/></svg>Jetzt aktualisieren</button>
 </div>
 
+<div class="card" id="chartcard" style="display:none">
+<div class="ctitle"><svg class="ic"><use href="#i-chart"/></svg>Ladeverlauf</div>
+<svg class="chart" id="chart" viewBox="0 0 300 100" preserveAspectRatio="none">
+<defs><linearGradient id="agrad" x1="0" y1="0" x2="0" y2="1">
+<stop id="ags1" offset="0" stop-color="#d5001c"/><stop offset="1" stop-color="#d5001c" stop-opacity="0"/></linearGradient></defs>
+<line class="grid" x1="0" y1="10" x2="300" y2="10"/><line class="grid" x1="0" y1="90" x2="300" y2="90"/>
+<path class="area" id="charea" d=""/><path class="line" id="chline" d=""/></svg>
+<div class="chartlab"><span id="chspan">Verlauf</span><span>0&ndash;100 %</span></div></div>
 <div class="card" id="connectcard">
 <div class="ctitle"><svg class="ic"><use href="#i-key"/></svg><span id="connecttitle">Mit Porsche verbinden</span></div>
 <div class="sub" id="connectednote" style="display:none">Verbunden mit deinem Porsche-Konto. <span class="link" onclick="showLogin()">Neu anmelden</span></div>
@@ -656,6 +692,16 @@ border-radius:12px;padding:12px;max-height:170px;overflow:auto;white-space:pre-w
 <div class="adminhead"><button class="iconbtn" onclick="showDash()"><svg class="ic"><use href="#i-back"/></svg></button>
 <div style="font-weight:700;font-size:17px">Einstellungen</div></div>
 
+<div class="card">
+<div class="ctitle"><svg class="ic"><use href="#i-sun"/></svg>Darstellung</div>
+<div class="sub">Akzentfarbe (der Hell/Dunkel-Umschalter ist oben rechts)</div>
+<div class="swatches" id="swatches">
+<div class="sw" data-c="#d5001c" data-c2="#ff2038" style="background:#d5001c" onclick="setAccent(this)"></div>
+<div class="sw" data-c="#0a7cff" data-c2="#3d9bff" style="background:#0a7cff" onclick="setAccent(this)"></div>
+<div class="sw" data-c="#12a150" data-c2="#1bd06a" style="background:#12a150" onclick="setAccent(this)"></div>
+<div class="sw" data-c="#f0a020" data-c2="#ffbe4d" style="background:#f0a020" onclick="setAccent(this)"></div>
+<div class="sw" data-c="#8a8f98" data-c2="#a7acb5" style="background:#8a8f98" onclick="setAccent(this)"></div>
+</div></div>
 <form method="POST" action="/save">
 <div class="card">
 <div class="ctitle"><svg class="ic"><use href="#i-wifi"/></svg>Netzwerk</div>
@@ -665,7 +711,15 @@ border-radius:12px;padding:12px;max-height:170px;overflow:auto;white-space:pre-w
 <div class="card">
 <div class="ctitle"><svg class="ic"><use href="#i-car"/></svg>Fahrzeug &amp; Abruf</div>
 <label>VIN (nur bei mehreren Fahrzeugen)</label><input name="vin" id="fvin">
-<label>Aktualisierung (Minuten)</label><input name="interval" id="fint">
+<label>Porsche-Abruf-Intervall</label>
+<select name="interval" id="fint">
+<option value="5">alle 5 Minuten</option>
+<option value="10">alle 10 Minuten (empfohlen)</option>
+<option value="15">alle 15 Minuten</option>
+<option value="30">alle 30 Minuten</option>
+<option value="60">stuendlich</option>
+</select>
+<div class="sub" style="margin-top:6px">Kuerzer als 5 Min. ist gesperrt, damit Porsche dich nicht wegen zu vieler Anfragen blockiert. openWB liest den Ladestand jederzeit vom ESP32 &ndash; unabhaengig davon.</div>
 <label>Refresh-Token (optional, statt Login)</label><input name="refresh" placeholder="hier einfuegen zum Aendern">
 </div>
 <div class="card">
@@ -739,7 +793,22 @@ if(s.update_status&&!T('ustat').textContent)T('ustat').textContent=s.update_stat
 if(document.activeElement.tagName!=='INPUT'){if(s.ssid)T('fssid').value=s.ssid;
 T('fvin').value=s.vin||'';T('fint').value=s.interval||10;if(s.update_url!==undefined)T('fupd').value=s.update_url||''}
 T('log').textContent=(s.log||[]).join('\n');
+drawChart(s.hist,s.hist_min||10);
 }).catch(e=>{})}
+function drawChart(hist,mins){var c=T('chartcard');
+if(!hist||hist.length<2){c.style.display='none';return}c.style.display='block';
+var W=300,H=100,p=10,n=hist.length;
+var xs=i=>n<2?0:i/(n-1)*W, ys=v=>H-p-Math.max(0,Math.min(100,v))/100*(H-2*p);
+var line='';hist.forEach((v,i)=>line+=(i?'L':'M')+xs(i).toFixed(1)+' '+ys(v).toFixed(1)+' ');
+var area='M'+xs(0).toFixed(1)+' '+H+' ';hist.forEach((v,i)=>area+='L'+xs(i).toFixed(1)+' '+ys(v).toFixed(1)+' ');
+area+='L'+xs(n-1).toFixed(1)+' '+H+' Z';
+T('chline').setAttribute('d',line.trim());T('charea').setAttribute('d',area);
+var hrs=n*mins/60;T('chspan').textContent=hrs>=1?('letzte '+Math.round(hrs)+' Std'):('letzte '+(n*mins)+' Min');}
+function applyAccent(c,c2){var r=document.documentElement.style;r.setProperty('--red',c);r.setProperty('--red2',c2);
+var a=T('gs1'),b=T('gs2'),d=T('ags1');if(a)a.setAttribute('stop-color',c2);if(b)b.setAttribute('stop-color',c);if(d)d.setAttribute('stop-color',c);
+document.querySelectorAll('#swatches .sw').forEach(e=>e.classList.toggle('active',e.dataset.c===c))}
+function setAccent(el){localStorage.acc=el.dataset.c;localStorage.acc2=el.dataset.c2;applyAccent(el.dataset.c,el.dataset.c2)}
+if(localStorage.acc)applyAccent(localStorage.acc,localStorage.acc2||localStorage.acc);else applyAccent('#d5001c','#ff2038');
 function ls(t){var l=T('lstat');l.style.display=t?'flex':'none';T('lstattext').innerHTML=t||''}
 function handleLogin(s){
 if(s.login_success){T('capbox').style.display='none';forceLogin=false;ls('');T('lstat').style.display='none';load();return}
@@ -785,6 +854,9 @@ void handleStatus() {
   d["update_status"] = updateStatus;
   d["update_available"] = updateAvailable;
   d["update_url"] = cfgUpdateUrl;
+  d["hist_min"] = cfgIntervalMin;
+  JsonArray h = d["hist"].to<JsonArray>();
+  for (int i = 0; i < histCount; i++) h.add(socHist[(histHead - histCount + i + HIST_N) % HIST_N]);
   JsonArray lg = d["log"].to<JsonArray>();
   for (int i = 0; i < LOG_LINES; i++) {
     String line = logBuf[(logHead + i) % LOG_LINES];
@@ -821,6 +893,8 @@ void handleSave() {
   String refresh = server.arg("refresh");
   String vin = server.arg("vin");
   uint32_t interval = server.arg("interval").toInt();
+  if (interval < 5) interval = interval == 0 ? 10 : 5;   // API-Schutz: min. 5 Min
+  if (interval > 1440) interval = 1440;
   String updUrl = server.arg("update_url");
   String updTok = server.arg("update_token");
   prefs.begin("porsche", false);

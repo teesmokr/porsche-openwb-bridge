@@ -1,5 +1,5 @@
 {
-  "version": "1.3.0",
+  "version": "1.4.0",
   "bin": "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/firmware.bin",
-  "notes": "Neues Design: Hell/Dunkel, Piktogramme, aufgeraeumtes Dashboard, Einstellungen im Admin-Bereich, Ladeanzeige. Auslieferung tokenlos ueber teesmokr/porsche-openwb-firmware."
+  "notes": "Ladeverlauf-Diagramm, waehlbare Akzentfarbe, Handy-Optimierung, Abruf-Intervall waehlbar (min. 5 Min, API-Schutz). Auslieferung tokenlos ueber teesmokr/porsche-openwb-firmware."
 }

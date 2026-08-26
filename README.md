@@ -24,10 +24,13 @@ freundlicher Sprache. Alle technischen Einstellungen liegen im **Admin-Bereich**
 |---|---|
 | ![Admin](docs/screenshots/admin.png) | ![Login mit Captcha](docs/screenshots/login-captcha.png) |
 
-- **Dashboard:** Lade-Ring mit Ladeanzeige, Status-Pille, Reichweite/Zeit/Auto,
-  „So verbindest du openWB" mit Kopier-Button.
-- **Admin:** Netzwerk, Fahrzeug & Abruf, Update-Quelle, Firmware-Update, Diagnose.
+- **Dashboard:** Lade-Ring mit Ladeanzeige (Blitz beim Laden), Status-Pille,
+  **Ladeverlauf-Diagramm**, „So verbindest du openWB" mit Kopier-Button.
+- **Admin:** Darstellung (**Hell/Dunkel** + **Akzentfarbe**), Netzwerk,
+  Fahrzeug & Abruf (mit **wählbarem Abruf-Intervall**, min. 5 Min als
+  API-Schutz), Update-Quelle, Firmware-Update, Diagnose.
 - **Anmeldung:** Porsche-Login inkl. **Captcha** direkt im Browser.
+- **Handy-optimiert** (responsives Layout).
 
 ## Was ist enthalten
 
