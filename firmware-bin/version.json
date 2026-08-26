@@ -1,5 +1,5 @@
 {
-  "version": "1.2.0",
+  "version": "1.3.0",
   "bin": "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/firmware.bin",
-  "notes": "Neues Porsche-Cockpit-Design (Lade-Ring, Rot/Schwarz). Web-Login mit Captcha + OTA. Auslieferung tokenlos ueber teesmokr/porsche-openwb-firmware."
+  "notes": "Neues Design: Hell/Dunkel, Piktogramme, aufgeraeumtes Dashboard, Einstellungen im Admin-Bereich, Ladeanzeige. Auslieferung tokenlos ueber teesmokr/porsche-openwb-firmware."
 }

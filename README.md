@@ -12,13 +12,22 @@ PV-Überschussladen bis zu einem Ziel-SoC.
 
 ## Screenshots (ESP32-Web-Interface)
 
-| Dashboard & Einrichtung | Login mit Captcha |
-|---|---|
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Login mit Captcha](docs/screenshots/login-captcha.png) |
+Aufgeräumtes Dashboard mit **Hell-/Dunkel-Modus**, Piktogrammen und
+freundlicher Sprache. Alle technischen Einstellungen liegen im **Admin-Bereich**
+(Zahnrad).
 
-Live-Status (SoC, Reichweite, Badges), openWB-URLs zum Kopieren, Einrichtung,
-**Firmware-Update (OTA)** und ein Diagnose-/Log-Panel — alles in einer Seite.
-Der Porsche-Login inkl. **Captcha** läuft direkt im Browser.
+| Dashboard (hell) | Dashboard (dunkel) |
+|---|---|
+| ![Dashboard hell](docs/screenshots/dashboard.png) | ![Dashboard dunkel](docs/screenshots/dashboard-dark.png) |
+
+| Admin / Einstellungen | Anmeldung mit Captcha |
+|---|---|
+| ![Admin](docs/screenshots/admin.png) | ![Login mit Captcha](docs/screenshots/login-captcha.png) |
+
+- **Dashboard:** Lade-Ring mit Ladeanzeige, Status-Pille, Reichweite/Zeit/Auto,
+  „So verbindest du openWB" mit Kopier-Button.
+- **Admin:** Netzwerk, Fahrzeug & Abruf, Update-Quelle, Firmware-Update, Diagnose.
+- **Anmeldung:** Porsche-Login inkl. **Captcha** direkt im Browser.
 
 ## Was ist enthalten
 

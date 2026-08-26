@@ -34,7 +34,7 @@
 #include <map>
 
 // Firmware-Version (fuer den Online-Updater)
-static const char* FW_VERSION = "1.2.0";
+static const char* FW_VERSION = "1.3.0";
 // Standard-Update-Quelle (oeffentliches Firmware-Repo -> OTA ohne Token)
 static const char* DEFAULT_UPDATE_URL =
   "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/version.json";
@@ -88,6 +88,7 @@ uint32_t tokenExpiresAtMs = 0;
 String resolvedVin;
 int    curSoc   = -1;      // -1 = noch kein Wert
 float  curRange = -1;
+bool   curCharging = false;
 String lastError = "";
 uint32_t lastFetchMs = 0;
 bool   apMode = false;
@@ -231,7 +232,7 @@ void fetchSoc() {
   if (!resolveVin()) return;
   int code;
   String path = "/connect/v1/vehicles/" + resolvedVin +
-                "?mf=BATTERY_LEVEL&mf=E_RANGE&mf=RANGE&mf=MILEAGE";
+                "?mf=BATTERY_LEVEL&mf=E_RANGE&mf=RANGE&mf=MILEAGE&mf=BATTERY_CHARGING_STATE";
   String payload = apiGet(path, code);
   if (code == 401) {                 // Token abgelaufen -> einmal erneuern
     if (!refreshAccessToken()) return;
@@ -240,7 +241,7 @@ void fetchSoc() {
   if (code != 200) { lastError = "SoC-Abruf HTTP " + String(code); logMsg(lastError); return; }
   JsonDocument doc;
   if (deserializeJson(doc, payload)) { lastError = "SoC-JSON-Fehler."; logMsg(lastError); return; }
-  int soc = -1; float range = -1;
+  int soc = -1; float range = -1; bool charging = false;
   for (JsonObject m : doc["measurements"].as<JsonArray>()) {
     const char* key = m["key"];
     if (!key) continue;
@@ -250,10 +251,14 @@ void fetchSoc() {
     } else if (strcmp(key, "E_RANGE") == 0 || strcmp(key, "RANGE") == 0) {
       if (range < 0 && m["value"]["kilometers"].is<float>())
         range = m["value"]["kilometers"].as<float>();
+    } else if (strcmp(key, "BATTERY_CHARGING_STATE") == 0) {
+      // Feldname variiert -> defensiv nach "CHARG" in bekannten Feldern suchen
+      const char* st = m["value"]["chargingState"] | (m["value"]["state"] | "");
+      if (st && (strstr(st, "CHARG") || strstr(st, "charg"))) charging = true;
     }
   }
   if (soc < 0) { lastError = "Kein BATTERY_LEVEL erhalten."; logMsg(lastError); return; }
-  curSoc = soc; curRange = range; lastError = ""; lastFetchMs = millis();
+  curSoc = soc; curRange = range; curCharging = charging; lastError = ""; lastFetchMs = millis();
   logMsg("SoC aktualisiert: " + String(soc) + " %" +
          (range < 0 ? "" : ", " + String(range, 0) + " km"));
 }
@@ -510,189 +515,244 @@ const char PAGE[] PROGMEM = R"HTML(
 <!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>openWB Porsche Bridge</title><style>
-:root{--bg:#0a0a0c;--surf:#111114;--surf2:#17171c;--line:#2a2a31;--fg:#f4f4f6;
---mut:#8b8b93;--red:#d5001c;--red2:#ff2038;--ok:#3ad07a;--warn:#f0a020;--err:#ff3b52}
+:root{--bg:#eef0f3;--surf:#fff;--surf2:#fff;--line:#e3e5ea;--fg:#14151a;--mut:#6c6f7a;
+--red:#d5001c;--red2:#ff2038;--ok:#12a150;--warn:#c67a00;--err:#d5001c;--track:#e6e8ee;--shadow:0 1px 3px rgba(20,20,30,.08)}
+:root.dark{--bg:#0a0a0c;--surf:#111114;--surf2:#17171c;--line:#2a2a31;--fg:#f4f4f6;
+--mut:#8b8b93;--track:#232329;--shadow:none}
 *{box-sizing:border-box}html,body{margin:0}
-body{background:var(--bg);color:var(--fg);
-font-family:"Helvetica Neue",Arial,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
-.wrap{max-width:780px;margin:0 auto;padding:0 18px 40px}
-.top{display:flex;align-items:center;justify-content:space-between;padding:22px 2px 16px;
-border-bottom:1px solid var(--line)}
-.brand{font-weight:700;letter-spacing:.34em;text-transform:uppercase;font-size:15px}
-.brand span{color:var(--red)}
-.tag{color:var(--mut);font-size:11px;letter-spacing:.22em;text-transform:uppercase}
-.dot{width:9px;height:9px;border-radius:50%;background:var(--mut);display:inline-block;margin-right:7px;vertical-align:middle}
-.dot.ok{background:var(--ok);box-shadow:0 0 8px var(--ok)}.dot.err{background:var(--red);box-shadow:0 0 8px var(--red)}
-h2{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--mut);
-margin:0 0 14px;font-weight:600;display:flex;align-items:center;gap:8px}
-h2::before{content:"";width:16px;height:2px;background:var(--red);display:inline-block}
-.card{background:linear-gradient(180deg,var(--surf),var(--surf2));border:1px solid var(--line);
-border-radius:6px;padding:22px;margin:18px 0}
-.hero{display:flex;gap:26px;align-items:center;flex-wrap:wrap}
-.gaugewrap{position:relative;width:168px;height:168px;flex:none}
+body{background:var(--bg);color:var(--fg);font-family:"Helvetica Neue",Arial,system-ui,sans-serif;
+-webkit-font-smoothing:antialiased;transition:background .3s,color .3s}
+.wrap{max-width:760px;margin:0 auto;padding:0 16px 40px}
+.ic{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.top{display:flex;align-items:center;justify-content:space-between;padding:18px 2px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;letter-spacing:.02em}
+.brand .bdot{color:var(--red)}
+.tools{display:flex;gap:8px}
+.iconbtn{width:42px;height:42px;border-radius:12px;border:1px solid var(--line);background:var(--surf);
+color:var(--fg);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:var(--shadow)}
+.iconbtn:hover{border-color:var(--red)}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:18px;padding:20px;margin:14px 0;box-shadow:var(--shadow)}
+.ctitle{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:700;margin:0 0 4px}
+.ctitle .ic{color:var(--red);width:19px;height:19px}
+.sub{color:var(--mut);font-size:13.5px;line-height:1.5}
+.hero{display:flex;gap:24px;align-items:center;flex-wrap:wrap}
+.gaugewrap{position:relative;width:172px;height:172px;flex:none;margin:0 auto}
 .gauge{transform:rotate(-90deg)}
-.g-track{fill:none;stroke:#232329;stroke-width:9}
-.g-val{fill:none;stroke:url(#grad);stroke-width:9;stroke-linecap:round;
-transition:stroke-dashoffset 1s ease}
+.g-track{fill:none;stroke:var(--track);stroke-width:10}
+.g-val{fill:none;stroke:url(#grad);stroke-width:10;stroke-linecap:round;transition:stroke-dashoffset 1s ease}
 .g-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
-.g-center b{font-size:46px;font-weight:700;line-height:1}
-.g-center .pct{font-size:15px;color:var(--mut);margin-top:2px;letter-spacing:.16em}
-.stats{flex:1;min-width:210px}
-.stat{display:flex;justify-content:space-between;align-items:baseline;
-padding:11px 0;border-bottom:1px solid var(--line)}
-.stat:last-child{border-bottom:0}
-.stat .k{color:var(--mut);font-size:11px;letter-spacing:.16em;text-transform:uppercase}
-.stat .v{font-size:17px;font-weight:600}
-.badges{margin:14px 0 2px;display:flex;gap:8px;flex-wrap:wrap}
-.badge{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;
-padding:5px 11px;border-radius:2px;border:1px solid var(--line);color:var(--mut)}
-.badge.ok{color:var(--ok);border-color:rgba(58,208,122,.4)}
-.badge.warn{color:var(--warn);border-color:rgba(240,160,32,.4)}
-.badge.err{color:var(--err);border-color:rgba(255,59,82,.45)}
-label{display:block;margin:14px 0 5px;font-size:11px;letter-spacing:.14em;
-text-transform:uppercase;color:var(--mut)}
-input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:3px;
-background:#0c0c0f;color:var(--fg);font-size:14px;outline:none}
-input:focus{border-color:var(--red)}
-button{font-family:inherit;border:0;border-radius:2px;padding:11px 18px;font-size:12px;
-font-weight:700;letter-spacing:.12em;text-transform:uppercase;cursor:pointer;margin-top:12px}
+.g-center b{font-size:50px;font-weight:800;line-height:1;letter-spacing:-.02em}
+.g-center .lab{font-size:12px;color:var(--mut);margin-top:4px;text-transform:uppercase;letter-spacing:.14em}
+.bolt{position:absolute;top:16px;left:50%;transform:translateX(-50%);color:var(--red);display:none}
+.bolt .ic{width:22px;height:22px;fill:var(--red);stroke:none}
+.hstats{flex:1;min-width:200px}
+.tile{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.tile:last-child{border-bottom:0}
+.tile .ic{color:var(--mut);flex:none}
+.tile .k{color:var(--mut);font-size:12px}.tile .v{font-size:17px;font-weight:700}
+.tile .tv{margin-left:auto;text-align:right}
+.pill{display:inline-flex;align-items:center;gap:8px;padding:9px 15px;border-radius:999px;
+font-weight:700;font-size:14px;margin-top:4px}
+.pill .ic{width:18px;height:18px}
+.pill.ok{background:rgba(18,161,80,.12);color:var(--ok)}
+.pill.warn{background:rgba(198,122,0,.14);color:var(--warn)}
+.pill.err{background:rgba(213,0,28,.12);color:var(--err)}
+label{display:block;margin:14px 0 6px;font-size:13px;font-weight:600;color:var(--fg)}
+input{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:12px;
+background:var(--bg);color:var(--fg);font-size:15px;outline:none}
+input:focus{border-color:var(--red);background:var(--surf)}
+.btn{display:inline-flex;align-items:center;gap:8px;font-family:inherit;border:0;border-radius:12px;
+padding:12px 18px;font-size:14px;font-weight:700;cursor:pointer;margin-top:12px}
+.btn .ic{width:18px;height:18px}
 .primary{background:var(--red);color:#fff}.primary:hover{background:var(--red2)}
-.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
-.ghost:hover{border-color:var(--fg)}
-.row{display:flex;gap:12px;flex-wrap:wrap}
-.urlrow{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
-code{background:#0c0c0f;border:1px solid var(--line);border-radius:3px;padding:5px 9px;
-font-size:12.5px;word-break:break-all;color:var(--fg)}
-.hint{color:var(--warn);font-size:13px;margin-top:8px}
-.sub{color:var(--mut);font-size:12.5px}
-.log{font-family:"SF Mono",Consolas,monospace;font-size:12px;background:#0c0c0f;
-border:1px solid var(--line);border-radius:3px;padding:12px;max-height:180px;overflow:auto;
-white-space:pre-wrap;color:#c8c8cf;margin-top:12px}
-.metric{flex:1;min-width:110px;padding:10px 0}
-.metric .k{color:var(--mut);font-size:11px;letter-spacing:.14em;text-transform:uppercase}
-.metric .v{font-size:16px;font-weight:600}
-.foot{color:var(--mut);font-size:11px;letter-spacing:.1em;margin-top:22px;text-align:center}
-#capimg{max-width:240px;background:#fff;border-radius:3px;margin:8px 0;display:block}
-</style></head><body><div class="wrap">
-<div class="top"><div class="brand">openWB <span>&middot;</span> SoC Bridge</div>
-<div class="tag"><span class="dot" id="hdot"></span><span id="mode">...</span></div></div>
+.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}.ghost:hover{border-color:var(--red)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.urlbox{display:flex;align-items:center;gap:10px;margin-top:12px;background:var(--bg);
+border:1px solid var(--line);border-radius:12px;padding:6px 6px 6px 14px}
+.urlbox code{flex:1;font-size:13px;word-break:break-all;background:none;border:0;padding:0;color:var(--fg)}
+.hint{display:flex;gap:8px;align-items:flex-start;color:var(--warn);font-size:13.5px;margin-top:10px}
+.metric{flex:1;min-width:120px;padding:8px 0}
+.metric .k{color:var(--mut);font-size:12px}.metric .v{font-size:16px;font-weight:700}
+.log{font-family:"SF Mono",Consolas,monospace;font-size:12px;background:var(--bg);border:1px solid var(--line);
+border-radius:12px;padding:12px;max-height:170px;overflow:auto;white-space:pre-wrap;color:var(--mut);margin-top:12px}
+.foot{color:var(--mut);font-size:12px;margin-top:22px;text-align:center}
+#capimg{max-width:240px;background:#fff;border-radius:10px;margin:10px 0;display:block;padding:6px}
+.link{color:var(--red);cursor:pointer;font-weight:600;font-size:13.5px}
+.adminhead{display:flex;align-items:center;gap:12px;padding:18px 2px}
+</style></head><body>
+<svg width="0" height="0" style="position:absolute"><defs>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></symbol>
+<symbol id="i-cog" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+<symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></symbol>
+<symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M8 19h6a4 4 0 0 0 0-8H10a4 4 0 0 1 0-8h6"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="i-car" viewBox="0 0 24 24"><path d="M5 13l1.6-4.8A2 2 0 0 1 8.5 7h7a2 2 0 0 1 1.9 1.2L19 13M5 13h14v4H5zM7 17v2M17 17v2"/><circle cx="7.5" cy="15" r="1"/><circle cx="16.5" cy="15" r="1"/></symbol>
+<symbol id="i-wifi" viewBox="0 0 24 24"><path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="currentColor"/></symbol>
+<symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 3 14h8l-1 8 11-13h-8l0-7z"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.3M21 4v5h-5"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></symbol>
+<symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M17 6l3 3M15 8l2 2"/></symbol>
+<symbol id="i-wave" viewBox="0 0 24 24"><path d="M2 12s3-6 10-6 10 6 10 6"/><circle cx="12" cy="13" r="3"/></symbol>
+<symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3 18v3h3l6.5-6.3a4 4 0 0 0 5.2-5.4l-2.5 2.5-2.3-2.3 2.5-2.5z"/></symbol>
+</defs></svg>
 
+<div class="wrap">
+<div class="top"><div class="brand">openWB <span class="bdot">&middot;</span> SoC</div>
+<div class="tools">
+<button class="iconbtn" onclick="toggleTheme()" title="Hell/Dunkel"><svg class="ic"><use id="themeicon" href="#i-moon"/></svg></button>
+<button class="iconbtn" onclick="showAdmin()" title="Einstellungen"><svg class="ic"><use href="#i-cog"/></svg></button>
+</div></div>
+
+<!-- ================= DASHBOARD ================= -->
+<div id="view-dash">
 <div class="card"><div class="hero">
-<div class="gaugewrap"><svg class="gauge" width="168" height="168" viewBox="0 0 120 120">
+<div class="gaugewrap">
+<div class="bolt" id="bolt"><svg class="ic"><use href="#i-bolt"/></svg></div>
+<svg class="gauge" width="172" height="172" viewBox="0 0 120 120">
 <defs><linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
 <stop offset="0" stop-color="#ff2038"/><stop offset="1" stop-color="#d5001c"/></linearGradient></defs>
-<circle class="g-track" cx="60" cy="60" r="52"/>
-<circle id="ring" class="g-val" cx="60" cy="60" r="52"/></svg>
-<div class="g-center"><b id="soc">&ndash;</b><span class="pct">% SOC</span></div></div>
-<div class="stats">
-<div class="stat"><span class="k">Reichweite</span><span class="v" id="range">&ndash;</span></div>
-<div class="stat"><span class="k">Aktualisiert</span><span class="v" id="age">&ndash;</span></div>
-<div class="stat"><span class="k">Fahrzeug</span><span class="v" id="vinv" style="font-size:13px">&ndash;</span></div>
+<circle class="g-track" cx="60" cy="60" r="52"/><circle id="ring" class="g-val" cx="60" cy="60" r="52"/></svg>
+<div class="g-center"><b id="soc">&ndash;</b><span class="lab">Ladestand</span></div></div>
+<div class="hstats">
+<div class="pill" id="pill"><svg class="ic"><use id="pillicon" href="#i-clock"/></svg><span id="statustext">...</span></div>
+<div class="tile"><svg class="ic"><use href="#i-route"/></svg><span class="k">Reichweite</span><span class="v tv" id="range">&ndash;</span></div>
+<div class="tile"><svg class="ic"><use href="#i-clock"/></svg><span class="k">Aktualisiert</span><span class="v tv" id="age">&ndash;</span></div>
+<div class="tile"><svg class="ic"><use href="#i-car"/></svg><span class="k">Fahrzeug</span><span class="tv" id="vinv" style="font-weight:700;font-size:13px">&ndash;</span></div>
 </div></div>
-<div class="badges"><span class="badge" id="state">...</span>
-<span class="badge" id="wifi">WLAN</span><span class="badge" id="tok">Token</span></div>
-<div id="err" class="hint" style="display:none"></div>
-<div class="row"><button class="primary" onclick="act('refresh')">Jetzt aktualisieren</button>
-<button class="ghost" onclick="load()">Neu laden</button></div></div>
+<button class="btn primary" onclick="act('refresh')"><svg class="ic"><use href="#i-refresh"/></svg>Jetzt aktualisieren</button>
+</div>
 
-<div class="card"><h2>01 &mdash; Porsche-Login</h2>
-<div class="sub" style="margin-bottom:6px">Direkt hier anmelden &mdash; kein PC-Tool noetig.</div>
-<label>E-Mail (Porsche ID)</label><input id="lmail">
+<div class="card" id="connectcard">
+<div class="ctitle"><svg class="ic"><use href="#i-key"/></svg><span id="connecttitle">Mit Porsche verbinden</span></div>
+<div class="sub" id="connectednote" style="display:none">Verbunden mit deinem Porsche-Konto. <span class="link" onclick="showLogin()">Neu anmelden</span></div>
+<div id="loginform">
+<div class="sub">Melde dich mit deiner Porsche&nbsp;ID an &ndash; direkt hier, kein PC noetig.</div>
+<label>E-Mail</label><input id="lmail" placeholder="deine@porsche-id.de">
 <label>Passwort</label><input id="lpass" type="password">
-<button class="primary" onclick="doLogin()">Anmelden</button>
+<button class="btn primary" onclick="doLogin()">Anmelden</button>
 <div id="capbox" style="display:none;margin-top:12px">
-<div class="sub">Captcha ablesen und eingeben:</div>
-<img id="capimg">
-<input id="capcode" placeholder="Captcha-Code" style="max-width:220px">
-<button class="primary" onclick="doCaptcha()">Absenden</button></div>
-<div id="lstat" class="hint" style="display:none"></div></div>
+<div class="sub">Bitte die Zeichen aus dem Bild eingeben:</div>
+<img id="capimg"><input id="capcode" placeholder="Code aus dem Bild" style="max-width:240px">
+<button class="btn primary" onclick="doCaptcha()">Weiter</button></div>
+<div id="lstat" class="hint" style="display:none"><svg class="ic"><use href="#i-alert"/></svg><span id="lstattext"></span></div>
+</div></div>
 
-<div class="card"><h2>02 &mdash; In openWB eintragen</h2>
-<div class="sub">Fahrzeug &rarr; SoC-Modul &bdquo;HTTP&ldquo;</div>
-<div class="urlrow"><span class="sub" style="width:74px">SoC-URL</span>
-<code id="usoc"></code><button class="ghost" style="margin:0" onclick="cp('usoc')">Kopieren</button></div>
-<div class="urlrow"><span class="sub" style="width:74px">Range-URL</span>
-<code id="urange"></code><button class="ghost" style="margin:0" onclick="cp('urange')">Kopieren</button></div></div>
+<div class="card">
+<div class="ctitle"><svg class="ic"><use href="#i-link"/></svg>So verbindest du openWB</div>
+<div class="sub">Trage diese Adresse in openWB ein bei <b>Fahrzeug &rarr; SoC-Modul &bdquo;HTTP&ldquo;</b>:</div>
+<div class="urlbox"><code id="usoc"></code>
+<button class="iconbtn" style="width:38px;height:38px" onclick="cp('usoc')" title="Kopieren"><svg class="ic"><use href="#i-copy"/></svg></button></div>
+<div class="sub" style="margin-top:8px">Reichweite (optional): <span class="link" onclick="cp('urange')">Adresse kopieren</span>
+<span id="urange" style="display:none"></span></div></div>
+</div>
 
-<div class="card"><h2>03 &mdash; Einrichtung</h2><form method="POST" action="/save">
+<!-- ================= ADMIN ================= -->
+<div id="view-admin" style="display:none">
+<div class="adminhead"><button class="iconbtn" onclick="showDash()"><svg class="ic"><use href="#i-back"/></svg></button>
+<div style="font-weight:700;font-size:17px">Einstellungen</div></div>
+
+<form method="POST" action="/save">
+<div class="card">
+<div class="ctitle"><svg class="ic"><use href="#i-wifi"/></svg>Netzwerk</div>
 <label>WLAN-Name (SSID)</label><input name="ssid" id="fssid">
 <label>WLAN-Passwort</label><input name="pass" type="password" placeholder="(leer = unveraendert)">
-<label>Porsche Refresh-Token (optional, alternativ zum Login)</label>
-<input name="refresh" placeholder="hier einfuegen zum Aendern">
-<label>VIN (optional)</label><input name="vin" id="fvin">
+</div>
+<div class="card">
+<div class="ctitle"><svg class="ic"><use href="#i-car"/></svg>Fahrzeug &amp; Abruf</div>
+<label>VIN (nur bei mehreren Fahrzeugen)</label><input name="vin" id="fvin">
 <label>Aktualisierung (Minuten)</label><input name="interval" id="fint">
-<label>Update-URL (optional)</label><input name="update_url" id="fupd">
+<label>Refresh-Token (optional, statt Login)</label><input name="refresh" placeholder="hier einfuegen zum Aendern">
+</div>
+<div class="card">
+<div class="ctitle"><svg class="ic"><use href="#i-download"/></svg>Update-Quelle</div>
+<label>Update-URL</label><input name="update_url" id="fupd">
 <label>Update-Token (nur privates Repo)</label><input name="update_token" type="password" placeholder="(leer = unveraendert)">
-<button class="primary" type="submit">Speichern &amp; neu starten</button></form></div>
+</div>
+<button class="btn primary" type="submit"><svg class="ic"><use href="#i-check"/></svg>Speichern &amp; neu starten</button>
+</form>
 
-<div class="card"><h2>04 &mdash; Firmware-Update</h2>
-<div class="sub">Installiert: v<span id="fw">?</span> &middot; Update aus dem Git-Repo.</div>
+<div class="card">
+<div class="ctitle"><svg class="ic"><use href="#i-download"/></svg>Firmware-Update</div>
+<div class="sub">Installiert: v<span id="fw">?</span></div>
 <div id="ustat" class="sub" style="margin-top:6px"></div>
-<div class="row"><button class="ghost" onclick="checkUpd()">Auf Updates pruefen</button>
-<button class="primary" id="ubtn" style="display:none" onclick="doUpd()">Update installieren</button></div></div>
+<div class="row"><button class="btn ghost" onclick="checkUpd()"><svg class="ic"><use href="#i-refresh"/></svg>Auf Updates pruefen</button>
+<button class="btn primary" id="ubtn" style="display:none" onclick="doUpd()"><svg class="ic"><use href="#i-download"/></svg>Installieren</button></div></div>
 
-<div class="card"><h2>05 &mdash; Diagnose</h2><div class="row">
-<div class="metric"><div class="k">IP</div><div class="v" id="dip">&ndash;</div></div>
-<div class="metric"><div class="k">Signal</div><div class="v" id="drssi">&ndash;</div></div>
-<div class="metric"><div class="k">HTTP</div><div class="v" id="dcode">&ndash;</div></div>
+<div class="card">
+<div class="ctitle"><svg class="ic"><use href="#i-wrench"/></svg>Diagnose</div>
+<div class="row" style="margin-top:6px">
+<div class="metric"><div class="k">IP-Adresse</div><div class="v" id="dip">&ndash;</div></div>
+<div class="metric"><div class="k">WLAN-Signal</div><div class="v" id="drssi">&ndash;</div></div>
+<div class="metric"><div class="k">Letzter Status</div><div class="v" id="dcode">&ndash;</div></div>
 <div class="metric"><div class="k">Laufzeit</div><div class="v" id="dup">&ndash;</div></div></div>
 <div class="log" id="log">...</div></div>
+</div>
 
-<div class="foot">INOFFIZIELLES TOOL &middot; PORSCHE-CONNECT-ABO NOETIG &middot; TLS OHNE ZERTIFIKATSPRUEFUNG</div>
-</div><script>
-var RC=2*Math.PI*52;
-function cp(i){navigator.clipboard.writeText(document.getElementById(i).textContent)}
+<div class="foot">Inoffizielles Tool &middot; Porsche-Connect-Abo noetig</div>
+</div>
+<script>
+var RC=2*Math.PI*52, forceLogin=false;
+function T(id){return document.getElementById(id)}
+function icon(id,name){T(id).setAttribute('href','#'+name)}
+function toggleTheme(){var d=document.documentElement.classList.toggle('dark');
+localStorage.thm=d?'dark':'light';icon('themeicon',d?'i-sun':'i-moon')}
+(function(){var t=localStorage.thm||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+if(t==='dark')document.documentElement.classList.add('dark');
+document.addEventListener('DOMContentLoaded',()=>icon('themeicon',t==='dark'?'i-sun':'i-moon'))})();
+function showAdmin(){T('view-dash').style.display='none';T('view-admin').style.display='block';scrollTo(0,0)}
+function showDash(){T('view-admin').style.display='none';T('view-dash').style.display='block';scrollTo(0,0)}
+function showLogin(){forceLogin=true;T('loginform').style.display='block';T('connectednote').style.display='none'}
+function cp(i){navigator.clipboard.writeText(T(i).textContent)}
 function post(b){return fetch('/action',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(r=>r.json())}
 function act(d){post('do='+d).then(()=>setTimeout(load,700)).catch(e=>{})}
 function age(a){return a<0?'noch nie':(a==0?'gerade eben':a+' Min. her')}
-function bset(el,cls,txt){el.className='badge '+cls;el.textContent=txt}
+function statusOf(s){
+if(s.error)return['i-alert','err','Es gibt ein Problem'];
+if(s.ap)return['i-wifi','warn','Setup &ndash; bitte WLAN einrichten'];
+if(!s.has_token)return['i-key','warn','Noch nicht verbunden'];
+if(s.soc==null)return['i-clock','warn','Warte auf Fahrzeugdaten'];
+if(s.charging)return['i-bolt','ok','Laedt gerade'];
+return['i-check','ok','Alles bereit'];}
 function load(){fetch('/status').then(r=>r.json()).then(s=>{
 var soc=s.soc==null?null:s.soc;
-document.getElementById('soc').innerHTML=soc==null?'&ndash;':soc;
-var r=document.getElementById('ring');r.style.strokeDasharray=RC;
-r.style.strokeDashoffset=soc==null?RC:RC*(1-Math.max(0,Math.min(100,soc))/100);
-document.getElementById('range').innerHTML=s.range==null?'&ndash;':Math.round(s.range)+' km';
-document.getElementById('age').textContent=age(s.age_min);
-document.getElementById('vinv').innerHTML=s.vin?s.vin:'&ndash;';
-var st=document.getElementById('state');
-if(s.error)bset(st,'err','Fehler');else if(soc==null)bset(st,'warn','Wartet auf Daten');else bset(st,'ok','Betriebsbereit');
-var e=document.getElementById('err');if(s.error){e.style.display='block';e.textContent=s.error}else e.style.display='none';
-bset(document.getElementById('wifi'),s.wifi?'ok':'warn','WLAN '+(s.ssid||'-'));
-bset(document.getElementById('tok'),s.has_token?(s.token_valid?'ok':'warn'):'err',
-s.has_token?(s.token_valid?'Token gueltig':'Token gespeichert'):'Kein Token');
-var hd=document.getElementById('hdot');hd.className='dot '+(s.error?'err':(soc==null?'':'ok'));
-document.getElementById('mode').textContent=s.ap?'Setup-Modus':'Verbunden';
-var h='192.168.178.55';h=location.host||h;
-document.getElementById('usoc').textContent='http://'+h+'/soc';
-document.getElementById('urange').textContent='http://'+h+'/range';
-document.getElementById('dip').textContent=s.ip||'-';
-document.getElementById('drssi').textContent=(s.rssi||0)+' dBm';
-document.getElementById('dcode').textContent=s.http||'-';
-document.getElementById('dup').textContent=Math.floor((s.uptime||0)/60)+' min';
-document.getElementById('fw').textContent=s.fw||'?';
-if(s.update_status&&!document.getElementById('ustat').textContent)document.getElementById('ustat').textContent=s.update_status;
-if(document.activeElement.tagName!=='INPUT'){if(s.ssid)document.getElementById('fssid').value=s.ssid;
-document.getElementById('fvin').value=s.vin||'';document.getElementById('fint').value=s.interval||10;
-if(s.update_url!==undefined)document.getElementById('fupd').value=s.update_url||'';}
-document.getElementById('log').textContent=(s.log||[]).join('\n');
+T('soc').innerHTML=soc==null?'&ndash;':soc;
+var r=T('ring');r.style.strokeDasharray=RC;r.style.strokeDashoffset=soc==null?RC:RC*(1-Math.max(0,Math.min(100,soc))/100);
+T('range').innerHTML=s.range==null?'&ndash;':Math.round(s.range)+' km';
+T('age').textContent=age(s.age_min);
+T('vinv').innerHTML=s.vin?s.vin:'&ndash;';
+T('bolt').style.display=s.charging?'block':'none';
+var st=statusOf(s);icon('pillicon',st[0]);T('pill').className='pill '+st[1];T('statustext').innerHTML=st[2];
+// Verbindungs-Card smart ein/ausblenden
+if(s.has_token&&!forceLogin){T('loginform').style.display='none';T('connectednote').style.display='block';T('connecttitle').textContent='Porsche-Konto'}
+else{T('loginform').style.display='block';T('connectednote').style.display='none';T('connecttitle').textContent='Mit Porsche verbinden'}
+var h=location.host||'192.168.4.1';
+T('usoc').textContent='http://'+h+'/soc';T('urange').textContent='http://'+h+'/range';
+T('dip').textContent=s.ip||'-';T('drssi').textContent=(s.rssi||0)+' dBm';
+T('dcode').textContent=s.http||'-';T('dup').textContent=Math.floor((s.uptime||0)/60)+' min';
+T('fw').textContent=s.fw||'?';
+if(s.update_status&&!T('ustat').textContent)T('ustat').textContent=s.update_status;
+if(document.activeElement.tagName!=='INPUT'){if(s.ssid)T('fssid').value=s.ssid;
+T('fvin').value=s.vin||'';T('fint').value=s.interval||10;if(s.update_url!==undefined)T('fupd').value=s.update_url||''}
+T('log').textContent=(s.log||[]).join('\n');
 }).catch(e=>{})}
-function ls(t){var l=document.getElementById('lstat');l.style.display=t?'block':'none';l.textContent=t||''}
+function ls(t){var l=T('lstat');l.style.display=t?'flex':'none';T('lstattext').innerHTML=t||''}
 function handleLogin(s){
-if(s.login_success){document.getElementById('capbox').style.display='none';ls('Login erfolgreich! Zugang gespeichert.');load();return;}
-if(s.need_captcha){document.getElementById('capbox').style.display='block';
-if(s.captcha)document.getElementById('capimg').src=s.captcha;
-document.getElementById('capcode').value='';document.getElementById('capcode').focus();}
+if(s.login_success){T('capbox').style.display='none';forceLogin=false;ls('');T('lstat').style.display='none';load();return}
+if(s.need_captcha){T('capbox').style.display='block';if(s.captcha)T('capimg').src=s.captcha;T('capcode').value='';T('capcode').focus()}
 ls(s.login_error||'')}
-function doLogin(){ls('Anmeldung laeuft (kann etwas dauern) ...');
-post(new URLSearchParams({do:'login',email:document.getElementById('lmail').value,
-password:document.getElementById('lpass').value})).then(handleLogin).catch(e=>ls('Fehler bei der Anmeldung.'))}
-function doCaptcha(){ls('Pruefe Captcha ...');
-post(new URLSearchParams({do:'captcha',code:document.getElementById('capcode').value})).then(handleLogin).catch(e=>{})}
-function checkUpd(){document.getElementById('ustat').textContent='Pruefe ...';
-post('do=checkupdate').then(s=>{document.getElementById('ustat').textContent=s.update_status||'';
-document.getElementById('ubtn').style.display=s.update_available?'inline-block':'none'}).catch(e=>{})}
+function doLogin(){ls('Anmeldung laeuft &ndash; einen Moment ...');
+post(new URLSearchParams({do:'login',email:T('lmail').value,password:T('lpass').value})).then(handleLogin).catch(e=>ls('Anmeldung fehlgeschlagen.'))}
+function doCaptcha(){ls('Pruefe Eingabe ...');
+post(new URLSearchParams({do:'captcha',code:T('capcode').value})).then(handleLogin).catch(e=>{})}
+function checkUpd(){T('ustat').textContent='Pruefe ...';
+post('do=checkupdate').then(s=>{T('ustat').textContent=s.update_status||'';T('ubtn').style.display=s.update_available?'inline-flex':'none'}).catch(e=>{})}
 function doUpd(){if(!confirm('Firmware jetzt aktualisieren? Das Geraet startet neu.'))return;
-document.getElementById('ustat').textContent='Update laeuft, Geraet startet neu ...';post('do=update').catch(e=>{})}
+T('ustat').textContent='Update laeuft, Geraet startet neu ...';post('do=update').catch(e=>{})}
 load();setInterval(load,3000);
 </script></body></html>
 )HTML";
@@ -707,6 +767,7 @@ void handleStatus() {
   JsonDocument d;
   if (curSoc < 0) d["soc"] = nullptr; else d["soc"] = curSoc;
   if (curRange < 0) d["range"] = nullptr; else d["range"] = curRange;
+  d["charging"] = curCharging;
   d["age_min"] = lastFetchMs == 0 ? -1 : (int)((millis() - lastFetchMs) / 60000);
   d["error"] = lastError;
   d["vin"] = resolvedVin.length() ? resolvedVin : cfgVin;
