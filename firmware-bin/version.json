@@ -1,5 +1,5 @@
 {
   "version": "1.1.0",
-  "bin": "https://raw.githubusercontent.com/DEIN_USER/porsche-openwb-bridge/main/firmware-bin/firmware.bin",
+  "bin": "https://raw.githubusercontent.com/teesmokr/porsche-openwb-bridge/main/firmware-bin/firmware.bin",
   "notes": "Web-Login mit Captcha + OTA-Updater."
 }

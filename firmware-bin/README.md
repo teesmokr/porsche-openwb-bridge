@@ -12,7 +12,7 @@ Version mit seiner eigenen und lädt bei Bedarf `firmware.bin` und flasht sich.
 
 Im Web-Interface unter **Einrichtung**:
 - **Update-URL** = Roh-URL deiner `version.json`, z. B.
-  `https://raw.githubusercontent.com/DEIN_USER/porsche-openwb-bridge/main/firmware-bin/version.json`
+  `https://raw.githubusercontent.com/teesmokr/porsche-openwb-bridge/main/firmware-bin/version.json`
 - **Update-Token** = nur nötig, wenn das Repo **privat** ist (siehe unten).
 
 Dann im Web-Interface: **„Auf Updates prüfen"** → bei neuer Version
@@ -42,4 +42,4 @@ Dann im Web-Interface: **„Auf Updates prüfen"** → bei neuer Version
 4. Committen und pushen. Der ESP32 findet das Update beim nächsten „Prüfen".
 
 > Die in `bin` hinterlegte URL muss auf die **firmware.bin** in deinem Repo
-> zeigen (Platzhalter `DEIN_USER` ersetzen).
+> zeigen (Platzhalter `teesmokr` ersetzen).
