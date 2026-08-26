@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
   "bin": "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/firmware.bin",
-  "notes": "Web-Login mit Captcha + OTA-Updater. OTA wird tokenlos aus dem oeffentlichen Repo teesmokr/porsche-openwb-firmware ausgeliefert."
+  "notes": "Neues Porsche-Cockpit-Design (Lade-Ring, Rot/Schwarz). Web-Login mit Captcha + OTA. Auslieferung tokenlos ueber teesmokr/porsche-openwb-firmware."
 }

@@ -34,7 +34,7 @@
 #include <map>
 
 // Firmware-Version (fuer den Online-Updater)
-static const char* FW_VERSION = "1.1.0";
+static const char* FW_VERSION = "1.2.0";
 // Standard-Update-Quelle (oeffentliches Firmware-Repo -> OTA ohne Token)
 static const char* DEFAULT_UPDATE_URL =
   "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/version.json";
@@ -510,91 +510,160 @@ const char PAGE[] PROGMEM = R"HTML(
 <!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>openWB Porsche Bridge</title><style>
-:root{--bg:#0f1720;--card:#1b2733;--fg:#e8eef4;--mut:#9fb0c0;--acc:#3ea6ff;
---ok:#37d67a;--warn:#ffb020;--err:#ff5470;--line:#2a3a49}
-*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,system-ui,sans-serif;
-background:var(--bg);color:var(--fg)}.wrap{max-width:720px;margin:0 auto;padding:16px}
-h1{font-size:20px;margin:6px 0 2px}.sub{color:var(--mut);font-size:13px;margin-bottom:12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin:12px 0}
-.row{display:flex;gap:12px;flex-wrap:wrap}.metric{flex:1;min-width:110px}
-.metric .k{color:var(--mut);font-size:12px}.metric .v{font-size:18px;font-weight:600}
-.soc{font-size:44px;font-weight:700}.unit{font-size:18px;color:var(--mut)}
-.badge{display:inline-block;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:600;margin-right:4px}
-.b-ok{background:rgba(55,214,122,.15);color:var(--ok)}
-.b-warn{background:rgba(255,176,32,.15);color:var(--warn)}
-.b-err{background:rgba(255,84,112,.15);color:var(--err)}.b-mut{background:#25313d;color:var(--mut)}
-label{display:block;margin:10px 0 4px;font-size:13px;color:var(--mut)}
-input{width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);background:#0e161e;color:var(--fg)}
-button{border:0;border-radius:9px;padding:10px 14px;font-weight:600;cursor:pointer;margin-top:6px}
-.primary{background:var(--acc);color:#04121f}.ghost{background:#25313d;color:var(--fg)}
-code{background:#0e161e;border:1px solid var(--line);border-radius:6px;padding:3px 6px;word-break:break-all}
-.log{font-family:Consolas,monospace;font-size:12px;background:#0e161e;border:1px solid var(--line);
-border-radius:8px;padding:10px;max-height:180px;overflow:auto;white-space:pre-wrap}
-.hint{color:var(--warn);font-size:13px}</style></head><body><div class="wrap">
-<h1>openWB &middot; Porsche SoC-Bridge</h1><div class="sub" id="mode">...</div>
-<div class="card"><div class="row" style="align-items:center">
-<div class="metric"><div class="k">Ladestand</div><div><span class="soc" id="soc">-</span><span class="unit"> %</span></div></div>
-<div class="metric"><div class="k">Reichweite</div><div class="v" id="range">-</div></div>
-<div class="metric"><div class="k">Aktualisiert</div><div class="v" id="age">-</div></div></div>
-<div style="margin-top:10px"><span class="badge" id="state">...</span>
-<span class="badge b-mut" id="wifi">WLAN -</span><span class="badge b-mut" id="tok">Token -</span></div>
-<div id="err" class="hint" style="margin-top:8px"></div>
-<div style="margin-top:12px"><button class="primary" onclick="act('refresh')">Jetzt aktualisieren</button>
+:root{--bg:#0a0a0c;--surf:#111114;--surf2:#17171c;--line:#2a2a31;--fg:#f4f4f6;
+--mut:#8b8b93;--red:#d5001c;--red2:#ff2038;--ok:#3ad07a;--warn:#f0a020;--err:#ff3b52}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--bg);color:var(--fg);
+font-family:"Helvetica Neue",Arial,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:780px;margin:0 auto;padding:0 18px 40px}
+.top{display:flex;align-items:center;justify-content:space-between;padding:22px 2px 16px;
+border-bottom:1px solid var(--line)}
+.brand{font-weight:700;letter-spacing:.34em;text-transform:uppercase;font-size:15px}
+.brand span{color:var(--red)}
+.tag{color:var(--mut);font-size:11px;letter-spacing:.22em;text-transform:uppercase}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--mut);display:inline-block;margin-right:7px;vertical-align:middle}
+.dot.ok{background:var(--ok);box-shadow:0 0 8px var(--ok)}.dot.err{background:var(--red);box-shadow:0 0 8px var(--red)}
+h2{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--mut);
+margin:0 0 14px;font-weight:600;display:flex;align-items:center;gap:8px}
+h2::before{content:"";width:16px;height:2px;background:var(--red);display:inline-block}
+.card{background:linear-gradient(180deg,var(--surf),var(--surf2));border:1px solid var(--line);
+border-radius:6px;padding:22px;margin:18px 0}
+.hero{display:flex;gap:26px;align-items:center;flex-wrap:wrap}
+.gaugewrap{position:relative;width:168px;height:168px;flex:none}
+.gauge{transform:rotate(-90deg)}
+.g-track{fill:none;stroke:#232329;stroke-width:9}
+.g-val{fill:none;stroke:url(#grad);stroke-width:9;stroke-linecap:round;
+transition:stroke-dashoffset 1s ease}
+.g-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.g-center b{font-size:46px;font-weight:700;line-height:1}
+.g-center .pct{font-size:15px;color:var(--mut);margin-top:2px;letter-spacing:.16em}
+.stats{flex:1;min-width:210px}
+.stat{display:flex;justify-content:space-between;align-items:baseline;
+padding:11px 0;border-bottom:1px solid var(--line)}
+.stat:last-child{border-bottom:0}
+.stat .k{color:var(--mut);font-size:11px;letter-spacing:.16em;text-transform:uppercase}
+.stat .v{font-size:17px;font-weight:600}
+.badges{margin:14px 0 2px;display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;
+padding:5px 11px;border-radius:2px;border:1px solid var(--line);color:var(--mut)}
+.badge.ok{color:var(--ok);border-color:rgba(58,208,122,.4)}
+.badge.warn{color:var(--warn);border-color:rgba(240,160,32,.4)}
+.badge.err{color:var(--err);border-color:rgba(255,59,82,.45)}
+label{display:block;margin:14px 0 5px;font-size:11px;letter-spacing:.14em;
+text-transform:uppercase;color:var(--mut)}
+input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:3px;
+background:#0c0c0f;color:var(--fg);font-size:14px;outline:none}
+input:focus{border-color:var(--red)}
+button{font-family:inherit;border:0;border-radius:2px;padding:11px 18px;font-size:12px;
+font-weight:700;letter-spacing:.12em;text-transform:uppercase;cursor:pointer;margin-top:12px}
+.primary{background:var(--red);color:#fff}.primary:hover{background:var(--red2)}
+.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
+.ghost:hover{border-color:var(--fg)}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.urlrow{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+code{background:#0c0c0f;border:1px solid var(--line);border-radius:3px;padding:5px 9px;
+font-size:12.5px;word-break:break-all;color:var(--fg)}
+.hint{color:var(--warn);font-size:13px;margin-top:8px}
+.sub{color:var(--mut);font-size:12.5px}
+.log{font-family:"SF Mono",Consolas,monospace;font-size:12px;background:#0c0c0f;
+border:1px solid var(--line);border-radius:3px;padding:12px;max-height:180px;overflow:auto;
+white-space:pre-wrap;color:#c8c8cf;margin-top:12px}
+.metric{flex:1;min-width:110px;padding:10px 0}
+.metric .k{color:var(--mut);font-size:11px;letter-spacing:.14em;text-transform:uppercase}
+.metric .v{font-size:16px;font-weight:600}
+.foot{color:var(--mut);font-size:11px;letter-spacing:.1em;margin-top:22px;text-align:center}
+#capimg{max-width:240px;background:#fff;border-radius:3px;margin:8px 0;display:block}
+</style></head><body><div class="wrap">
+<div class="top"><div class="brand">openWB <span>&middot;</span> SoC Bridge</div>
+<div class="tag"><span class="dot" id="hdot"></span><span id="mode">...</span></div></div>
+
+<div class="card"><div class="hero">
+<div class="gaugewrap"><svg class="gauge" width="168" height="168" viewBox="0 0 120 120">
+<defs><linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#ff2038"/><stop offset="1" stop-color="#d5001c"/></linearGradient></defs>
+<circle class="g-track" cx="60" cy="60" r="52"/>
+<circle id="ring" class="g-val" cx="60" cy="60" r="52"/></svg>
+<div class="g-center"><b id="soc">&ndash;</b><span class="pct">% SOC</span></div></div>
+<div class="stats">
+<div class="stat"><span class="k">Reichweite</span><span class="v" id="range">&ndash;</span></div>
+<div class="stat"><span class="k">Aktualisiert</span><span class="v" id="age">&ndash;</span></div>
+<div class="stat"><span class="k">Fahrzeug</span><span class="v" id="vinv" style="font-size:13px">&ndash;</span></div>
+</div></div>
+<div class="badges"><span class="badge" id="state">...</span>
+<span class="badge" id="wifi">WLAN</span><span class="badge" id="tok">Token</span></div>
+<div id="err" class="hint" style="display:none"></div>
+<div class="row"><button class="primary" onclick="act('refresh')">Jetzt aktualisieren</button>
 <button class="ghost" onclick="load()">Neu laden</button></div></div>
-<div class="card"><b>1 &middot; Porsche-Login</b>
-<div class="sub" style="margin:4px 0 8px">Direkt hier anmelden (erzeugt den Zugang) - kein PC-Tool noetig.</div>
+
+<div class="card"><h2>01 &mdash; Porsche-Login</h2>
+<div class="sub" style="margin-bottom:6px">Direkt hier anmelden &mdash; kein PC-Tool noetig.</div>
 <label>E-Mail (Porsche ID)</label><input id="lmail">
 <label>Passwort</label><input id="lpass" type="password">
 <button class="primary" onclick="doLogin()">Anmelden</button>
-<div id="capbox" style="display:none;margin-top:10px">
+<div id="capbox" style="display:none;margin-top:12px">
 <div class="sub">Captcha ablesen und eingeben:</div>
-<img id="capimg" style="max-width:240px;background:#fff;border-radius:6px;margin:6px 0;display:block">
+<img id="capimg">
 <input id="capcode" placeholder="Captcha-Code" style="max-width:220px">
 <button class="primary" onclick="doCaptcha()">Absenden</button></div>
-<div id="lstat" class="hint" style="margin-top:8px"></div></div>
-<div class="card"><b>In openWB eintragen</b> &middot; Fahrzeug &rarr; SoC-Modul "HTTP"
-<div style="margin-top:8px">SoC-URL: <code id="usoc"></code> <button class="ghost" onclick="cp('usoc')">Kopieren</button></div>
-<div style="margin-top:6px">Range-URL: <code id="urange"></code> <button class="ghost" onclick="cp('urange')">Kopieren</button></div></div>
-<div class="card"><b>Einrichtung</b><form method="POST" action="/save">
+<div id="lstat" class="hint" style="display:none"></div></div>
+
+<div class="card"><h2>02 &mdash; In openWB eintragen</h2>
+<div class="sub">Fahrzeug &rarr; SoC-Modul &bdquo;HTTP&ldquo;</div>
+<div class="urlrow"><span class="sub" style="width:74px">SoC-URL</span>
+<code id="usoc"></code><button class="ghost" style="margin:0" onclick="cp('usoc')">Kopieren</button></div>
+<div class="urlrow"><span class="sub" style="width:74px">Range-URL</span>
+<code id="urange"></code><button class="ghost" style="margin:0" onclick="cp('urange')">Kopieren</button></div></div>
+
+<div class="card"><h2>03 &mdash; Einrichtung</h2><form method="POST" action="/save">
 <label>WLAN-Name (SSID)</label><input name="ssid" id="fssid">
 <label>WLAN-Passwort</label><input name="pass" type="password" placeholder="(leer = unveraendert)">
-<label>Porsche Refresh-Token (aus dem PC-Tool)</label><input name="refresh" placeholder="hier einfuegen zum Aendern">
+<label>Porsche Refresh-Token (optional, alternativ zum Login)</label>
+<input name="refresh" placeholder="hier einfuegen zum Aendern">
 <label>VIN (optional)</label><input name="vin" id="fvin">
 <label>Aktualisierung (Minuten)</label><input name="interval" id="fint">
-<label>Update-URL (version.json, optional)</label><input name="update_url" id="fupd">
-<label>Update-Token (nur privates Repo, optional)</label><input name="update_token" type="password" placeholder="(leer = unveraendert)">
-<button class="primary" type="submit">Speichern &amp; neu starten</button></form>
-<div class="sub" style="margin-top:8px">Refresh-Token holen: PC-Tool &rarr; Tab 1 einloggen &rarr; "Refresh-Token kopieren".</div></div>
-<div class="card"><b>Firmware-Update</b>
-<div class="sub" style="margin:4px 0 8px">Installiert: v<span id="fw">?</span>. Update aus dem Git-Repo.</div>
-<div id="ustat" class="sub"></div>
-<button class="ghost" onclick="checkUpd()">Auf Updates pruefen</button>
-<button class="primary" id="ubtn" style="display:none" onclick="doUpd()">Update installieren</button></div>
-<div class="card"><b>Diagnose / Log</b><div class="row" style="margin:8px 0">
-<div class="metric"><div class="k">IP</div><div class="v" id="dip">-</div></div>
-<div class="metric"><div class="k">Signal</div><div class="v" id="drssi">-</div></div>
-<div class="metric"><div class="k">Letzter HTTP-Code</div><div class="v" id="dcode">-</div></div>
-<div class="metric"><div class="k">Laufzeit</div><div class="v" id="dup">-</div></div></div>
+<label>Update-URL (optional)</label><input name="update_url" id="fupd">
+<label>Update-Token (nur privates Repo)</label><input name="update_token" type="password" placeholder="(leer = unveraendert)">
+<button class="primary" type="submit">Speichern &amp; neu starten</button></form></div>
+
+<div class="card"><h2>04 &mdash; Firmware-Update</h2>
+<div class="sub">Installiert: v<span id="fw">?</span> &middot; Update aus dem Git-Repo.</div>
+<div id="ustat" class="sub" style="margin-top:6px"></div>
+<div class="row"><button class="ghost" onclick="checkUpd()">Auf Updates pruefen</button>
+<button class="primary" id="ubtn" style="display:none" onclick="doUpd()">Update installieren</button></div></div>
+
+<div class="card"><h2>05 &mdash; Diagnose</h2><div class="row">
+<div class="metric"><div class="k">IP</div><div class="v" id="dip">&ndash;</div></div>
+<div class="metric"><div class="k">Signal</div><div class="v" id="drssi">&ndash;</div></div>
+<div class="metric"><div class="k">HTTP</div><div class="v" id="dcode">&ndash;</div></div>
+<div class="metric"><div class="k">Laufzeit</div><div class="v" id="dup">&ndash;</div></div></div>
 <div class="log" id="log">...</div></div>
-<div class="sub">Inoffizielles Tool &middot; Porsche-Connect-Abo noetig &middot; TLS ohne Zertifikatspruefung.</div>
+
+<div class="foot">INOFFIZIELLES TOOL &middot; PORSCHE-CONNECT-ABO NOETIG &middot; TLS OHNE ZERTIFIKATSPRUEFUNG</div>
 </div><script>
+var RC=2*Math.PI*52;
 function cp(i){navigator.clipboard.writeText(document.getElementById(i).textContent)}
-function act(d){fetch('/action?do='+d,{method:'POST'}).then(()=>setTimeout(load,700))}
+function post(b){return fetch('/action',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(r=>r.json())}
+function act(d){post('do='+d).then(()=>setTimeout(load,700)).catch(e=>{})}
 function age(a){return a<0?'noch nie':(a==0?'gerade eben':a+' Min. her')}
+function bset(el,cls,txt){el.className='badge '+cls;el.textContent=txt}
 function load(){fetch('/status').then(r=>r.json()).then(s=>{
-document.getElementById('soc').textContent=s.soc==null?'-':s.soc;
-document.getElementById('range').textContent=s.range==null?'-':Math.round(s.range)+' km';
+var soc=s.soc==null?null:s.soc;
+document.getElementById('soc').innerHTML=soc==null?'&ndash;':soc;
+var r=document.getElementById('ring');r.style.strokeDasharray=RC;
+r.style.strokeDashoffset=soc==null?RC:RC*(1-Math.max(0,Math.min(100,soc))/100);
+document.getElementById('range').innerHTML=s.range==null?'&ndash;':Math.round(s.range)+' km';
 document.getElementById('age').textContent=age(s.age_min);
+document.getElementById('vinv').innerHTML=s.vin?s.vin:'&ndash;';
 var st=document.getElementById('state');
-if(s.error){st.className='badge b-err';st.textContent='Fehler'}
-else if(s.soc==null){st.className='badge b-warn';st.textContent='wartet auf Daten'}
-else{st.className='badge b-ok';st.textContent='OK'}
-document.getElementById('err').textContent=s.error||'';
-var w=document.getElementById('wifi');w.textContent='WLAN '+(s.ssid||'-');w.className='badge '+(s.wifi?'b-ok':'b-warn');
-var t=document.getElementById('tok');t.textContent=s.has_token?(s.token_valid?'Token gueltig':'Token gespeichert'):'kein Token';
-t.className='badge '+(s.has_token?(s.token_valid?'b-ok':'b-warn'):'b-err');
-document.getElementById('mode').textContent=s.ap?'Setup-Modus (AP): bitte WLAN + Token eintragen.':'Verbunden mit '+(s.ssid||'?');
-var h=location.host;document.getElementById('usoc').textContent='http://'+h+'/soc';
+if(s.error)bset(st,'err','Fehler');else if(soc==null)bset(st,'warn','Wartet auf Daten');else bset(st,'ok','Betriebsbereit');
+var e=document.getElementById('err');if(s.error){e.style.display='block';e.textContent=s.error}else e.style.display='none';
+bset(document.getElementById('wifi'),s.wifi?'ok':'warn','WLAN '+(s.ssid||'-'));
+bset(document.getElementById('tok'),s.has_token?(s.token_valid?'ok':'warn'):'err',
+s.has_token?(s.token_valid?'Token gueltig':'Token gespeichert'):'Kein Token');
+var hd=document.getElementById('hdot');hd.className='dot '+(s.error?'err':(soc==null?'':'ok'));
+document.getElementById('mode').textContent=s.ap?'Setup-Modus':'Verbunden';
+var h='192.168.178.55';h=location.host||h;
+document.getElementById('usoc').textContent='http://'+h+'/soc';
 document.getElementById('urange').textContent='http://'+h+'/range';
 document.getElementById('dip').textContent=s.ip||'-';
 document.getElementById('drssi').textContent=(s.rssi||0)+' dBm';
@@ -607,26 +676,23 @@ document.getElementById('fvin').value=s.vin||'';document.getElementById('fint').
 if(s.update_url!==undefined)document.getElementById('fupd').value=s.update_url||'';}
 document.getElementById('log').textContent=(s.log||[]).join('\n');
 }).catch(e=>{})}
-function post(b){return fetch('/action',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(r=>r.json())}
+function ls(t){var l=document.getElementById('lstat');l.style.display=t?'block':'none';l.textContent=t||''}
 function handleLogin(s){
-if(s.login_success){document.getElementById('capbox').style.display='none';
-document.getElementById('lstat').textContent='Login erfolgreich! Zugang gespeichert.';load();return;}
+if(s.login_success){document.getElementById('capbox').style.display='none';ls('Login erfolgreich! Zugang gespeichert.');load();return;}
 if(s.need_captcha){document.getElementById('capbox').style.display='block';
 if(s.captcha)document.getElementById('capimg').src=s.captcha;
 document.getElementById('capcode').value='';document.getElementById('capcode').focus();}
-document.getElementById('lstat').textContent=s.login_error||''}
-function doLogin(){document.getElementById('lstat').textContent='Anmeldung laeuft (kann etwas dauern) ...';
+ls(s.login_error||'')}
+function doLogin(){ls('Anmeldung laeuft (kann etwas dauern) ...');
 post(new URLSearchParams({do:'login',email:document.getElementById('lmail').value,
-password:document.getElementById('lpass').value})).then(handleLogin).catch(e=>{
-document.getElementById('lstat').textContent='Fehler bei der Anmeldung.'})}
-function doCaptcha(){document.getElementById('lstat').textContent='Pruefe Captcha ...';
+password:document.getElementById('lpass').value})).then(handleLogin).catch(e=>ls('Fehler bei der Anmeldung.'))}
+function doCaptcha(){ls('Pruefe Captcha ...');
 post(new URLSearchParams({do:'captcha',code:document.getElementById('capcode').value})).then(handleLogin).catch(e=>{})}
 function checkUpd(){document.getElementById('ustat').textContent='Pruefe ...';
 post('do=checkupdate').then(s=>{document.getElementById('ustat').textContent=s.update_status||'';
 document.getElementById('ubtn').style.display=s.update_available?'inline-block':'none'}).catch(e=>{})}
 function doUpd(){if(!confirm('Firmware jetzt aktualisieren? Das Geraet startet neu.'))return;
-document.getElementById('ustat').textContent='Update laeuft, Geraet startet neu ...';
-post('do=update').catch(e=>{})}
+document.getElementById('ustat').textContent='Update laeuft, Geraet startet neu ...';post('do=update').catch(e=>{})}
 load();setInterval(load,3000);
 </script></body></html>
 )HTML";
