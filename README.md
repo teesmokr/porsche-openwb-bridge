@@ -10,6 +10,16 @@ PV-Überschussladen bis zu einem Ziel-SoC.
 > Login-Flow/Endpunkte sind portiert aus
 > [pyporscheconnectapi](https://github.com/CJNE/pyporscheconnectapi) (Apache-2.0).
 
+## Screenshots (ESP32-Web-Interface)
+
+| Dashboard & Einrichtung | Login mit Captcha |
+|---|---|
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Login mit Captcha](docs/screenshots/login-captcha.png) |
+
+Live-Status (SoC, Reichweite, Badges), openWB-URLs zum Kopieren, Einrichtung,
+**Firmware-Update (OTA)** und ein Diagnose-/Log-Panel — alles in einer Seite.
+Der Porsche-Login inkl. **Captcha** läuft direkt im Browser.
+
 ## Was ist enthalten
 
 | Ordner | Inhalt |
@@ -29,7 +39,10 @@ Weitere ohne Captcha erneuert. Danach:
   (E-Mail/Passwort, Captcha wird angezeigt) — oder alternativ den am PC erzeugten
   Refresh-Token eintragen. Der ESP32 holt den SoC dauerhaft und stellt ihn per
   HTTP bereit; in openWB das SoC-Modul **HTTP** auf `http://<esp-ip>/soc` zeigen.
-  Enthält außerdem einen **Online-Updater (OTA)** aus diesem Repo.
+  Enthält einen **Online-Updater (OTA)** — die Firmware wird tokenlos über das
+  öffentliche Repo
+  [`teesmokr/porsche-openwb-firmware`](https://github.com/teesmokr/porsche-openwb-firmware)
+  ausgeliefert (Standard-URL ist ab Werk eingetragen).
   → siehe [firmware-esp32/README.md](firmware-esp32/README.md) und
   [firmware-bin/README.md](firmware-bin/README.md)
 - **PC-Bridge (ohne SSH, ohne Extra-Hardware):** pc-tool → Tab 2 startet einen

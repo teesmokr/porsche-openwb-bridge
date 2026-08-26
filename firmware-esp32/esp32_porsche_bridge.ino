@@ -35,6 +35,9 @@
 
 // Firmware-Version (fuer den Online-Updater)
 static const char* FW_VERSION = "1.1.0";
+// Standard-Update-Quelle (oeffentliches Firmware-Repo -> OTA ohne Token)
+static const char* DEFAULT_UPDATE_URL =
+  "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/version.json";
 
 struct Resp;  // Forward-Declaration (Arduino generiert Prototypen vor der Definition)
 
@@ -114,6 +117,7 @@ void loadConfig() {
   cfgIntervalMin = prefs.getUInt("interval", 10);
   cfgUpdateUrl   = prefs.getString("upd_url", "");
   cfgUpdateToken = prefs.getString("upd_tok", "");
+  if (cfgUpdateUrl.isEmpty()) cfgUpdateUrl = DEFAULT_UPDATE_URL;  // tokenlose OTA ab Werk
   prefs.end();
 }
 

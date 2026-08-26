@@ -1,45 +1,39 @@
-# Online-Update (OTA) über dieses Repo
+# Online-Update (OTA)
 
-Der ESP32 kann sich selbst aktualisieren: Er liest `version.json`, vergleicht die
+Der ESP32 aktualisiert sich selbst: Er liest `version.json`, vergleicht die
 Version mit seiner eigenen und lädt bei Bedarf `firmware.bin` und flasht sich.
 
-## Dateien
+## Wie es ausgeliefert wird
 
-- `firmware.bin` — kompilierte Firmware (App-Partition), die der ESP32 lädt.
-- `version.json` — `{ "version": "...", "bin": "<URL zur firmware.bin>" }`.
+Die Firmware wird **tokenlos** über ein **öffentliches** Repo verteilt:
+**[`teesmokr/porsche-openwb-firmware`](https://github.com/teesmokr/porsche-openwb-firmware)**
+(nur `firmware.bin` + `version.json`). Der Quellcode bleibt in diesem privaten
+Repo.
 
-## Einrichtung im ESP32
+Die **Standard-Update-URL ist ab Werk in der Firmware eingetragen**
+(`DEFAULT_UPDATE_URL`), es muss also nichts konfiguriert werden. Im
+Web-Interface einfach **„Auf Updates prüfen"** → **„Update installieren"**.
 
-Im Web-Interface unter **Einrichtung**:
-- **Update-URL** = Roh-URL deiner `version.json`, z. B.
-  `https://raw.githubusercontent.com/teesmokr/porsche-openwb-bridge/main/firmware-bin/version.json`
-- **Update-Token** = nur nötig, wenn das Repo **privat** ist (siehe unten).
-
-Dann im Web-Interface: **„Auf Updates prüfen"** → bei neuer Version
-**„Update installieren"**. Der ESP32 flasht und startet neu.
-
-## Öffentliches vs. privates Repo
-
-- **Öffentliches Repo:** Kein Token nötig. Die Roh-URLs sind frei abrufbar.
-- **Privates Repo:** `raw.githubusercontent.com` verlangt Authentifizierung.
-  Lege einen **Fine-grained Personal Access Token** an (nur Leserecht
-  „Contents" für dieses Repo) und trage ihn als **Update-Token** ein. Der
-  ESP32 sendet ihn als `Authorization: token <...>`.
-  > Achtung: Der Token liegt dann im ESP32-Flash. Nutze einen eng begrenzten,
-  > widerrufbaren Token.
+Die Dateien hier im privaten Repo (`firmware-bin/`) sind eine Kopie/Archiv des
+jeweils veröffentlichten Stands.
 
 ## Neue Firmware veröffentlichen
 
-1. Version in `firmware-esp32/esp32_porsche_bridge.ino` erhöhen
-   (`FW_VERSION`).
-2. Neu kompilieren und die `.bin` exportieren:
+1. `FW_VERSION` in `firmware-esp32/esp32_porsche_bridge.ino` erhöhen.
+2. Kompilieren und `.bin` exportieren:
    ```
-   arduino-cli compile --fqbn esp32:esp32:esp32 \
-     --output-dir out firmware-esp32
-   cp out/esp32_porsche_bridge.ino.bin firmware-bin/firmware.bin
+   arduino-cli compile --fqbn esp32:esp32:esp32 --output-dir out firmware-esp32
    ```
-3. `firmware-bin/version.json` auf die neue Versionsnummer setzen.
-4. Committen und pushen. Der ESP32 findet das Update beim nächsten „Prüfen".
+3. `esp32_porsche_bridge.ino.bin` als `firmware.bin` **ins öffentliche Repo**
+   kopieren, dort `version.json` auf die neue Version setzen, committen+pushen.
+4. (Optional) dieselben Dateien hier unter `firmware-bin/` aktualisieren.
 
-> Die in `bin` hinterlegte URL muss auf die **firmware.bin** in deinem Repo
-> zeigen (Platzhalter `teesmokr` ersetzen).
+Der ESP32 findet das Update beim nächsten „Prüfen".
+
+## Privates Repo als OTA-Quelle (Alternative)
+
+Wer die `.bin` lieber privat hostet, trägt im Web-Interface eine eigene
+**Update-URL** ein und dazu einen **Fine-grained Personal Access Token**
+(Leserecht „Contents") als **Update-Token**. Der ESP32 sendet ihn als
+`Authorization: token <...>`. Der Token liegt dann im ESP32-Flash — eng
+begrenzt und widerrufbar wählen.
