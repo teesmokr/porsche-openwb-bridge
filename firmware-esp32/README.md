@@ -55,9 +55,12 @@ arduino-cli upload -p COM3 --fqbn esp32:esp32:esp32 esp32_porsche_bridge
 
 ## Erste Einrichtung (Web-Interface)
 
-1. Nach dem ersten Start öffnet der ESP32 ein WLAN
+1. Nach dem ersten Start öffnet der ESP32 automatisch einen **Setup-Hotspot**
    **`openWB-Porsche-Bridge`** (Passwort `porsche1234`).
-2. Damit verbinden, im Browser **http://192.168.4.1** öffnen.
+2. Mit dem Hotspot verbinden — dank **Captive Portal** öffnet sich die
+   Konfigurationsseite **automatisch** (wie bei Hotel-WLAN). Falls nicht,
+   im Browser **http://192.168.4.1** öffnen. Die Seite springt direkt in die
+   WLAN-Einrichtung.
 3. Eintragen: **WLAN-Name + Passwort**, **Refresh-Token** (eingefügt),
    optional **VIN**, **Intervall** (Minuten). **Speichern** → ESP32 startet neu
    und verbindet sich mit deinem WLAN.

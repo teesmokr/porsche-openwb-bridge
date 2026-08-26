@@ -29,12 +29,13 @@
 #include <HTTPClient.h>
 #include <HTTPUpdate.h>
 #include <WebServer.h>
+#include <DNSServer.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include <map>
 
 // Firmware-Version (fuer den Online-Updater)
-static const char* FW_VERSION = "1.4.0";
+static const char* FW_VERSION = "1.5.0";
 // Standard-Update-Quelle (oeffentliches Firmware-Repo -> OTA ohne Token)
 static const char* DEFAULT_UPDATE_URL =
   "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/version.json";
@@ -60,6 +61,7 @@ static const char* AP_SSID = "openWB-Porsche-Bridge";
 static const char* AP_PASS = "porsche1234";  // >= 8 Zeichen
 
 WebServer server(80);
+DNSServer dnsServer;              // Captive Portal (leitet alle Domains auf den ESP)
 Preferences prefs;
 
 // ---- Konfiguration (aus Flash) ------------------------------------------
@@ -159,7 +161,13 @@ bool connectWifi() {
 void startAp() {
   apMode = true;
   WiFi.mode(WIFI_AP);
+  IPAddress apIP(192, 168, 4, 1);
+  WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
   WiFi.softAP(AP_SSID, AP_PASS);
+  delay(200);
+  // Captive Portal: alle DNS-Anfragen auf den ESP leiten -> Konfig oeffnet sich automatisch
+  dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
+  dnsServer.start(53, "*", apIP);
   Serial.printf("Setup-AP aktiv: SSID '%s', Passwort '%s'\n", AP_SSID, AP_PASS);
   Serial.print("Konfiguration im Browser: http://");
   Serial.println(WiFi.softAPIP());
@@ -692,16 +700,10 @@ border-radius:12px;padding:12px;max-height:170px;overflow:auto;white-space:pre-w
 <div class="adminhead"><button class="iconbtn" onclick="showDash()"><svg class="ic"><use href="#i-back"/></svg></button>
 <div style="font-weight:700;font-size:17px">Einstellungen</div></div>
 
-<div class="card">
-<div class="ctitle"><svg class="ic"><use href="#i-sun"/></svg>Darstellung</div>
-<div class="sub">Akzentfarbe (der Hell/Dunkel-Umschalter ist oben rechts)</div>
-<div class="swatches" id="swatches">
-<div class="sw" data-c="#d5001c" data-c2="#ff2038" style="background:#d5001c" onclick="setAccent(this)"></div>
-<div class="sw" data-c="#0a7cff" data-c2="#3d9bff" style="background:#0a7cff" onclick="setAccent(this)"></div>
-<div class="sw" data-c="#12a150" data-c2="#1bd06a" style="background:#12a150" onclick="setAccent(this)"></div>
-<div class="sw" data-c="#f0a020" data-c2="#ffbe4d" style="background:#f0a020" onclick="setAccent(this)"></div>
-<div class="sw" data-c="#8a8f98" data-c2="#a7acb5" style="background:#8a8f98" onclick="setAccent(this)"></div>
-</div></div>
+<div class="card" id="setuphint" style="display:none;border-color:var(--red)">
+<div class="ctitle"><svg class="ic"><use href="#i-wifi"/></svg>Willkommen! Erst-Einrichtung</div>
+<div class="sub">Gib unten dein <b>WLAN</b> ein und speichere. Die Bridge startet neu und
+verbindet sich mit deinem Netz. Danach meldest du dich mit deiner Porsche&nbsp;ID an.</div></div>
 <form method="POST" action="/save">
 <div class="card">
 <div class="ctitle"><svg class="ic"><use href="#i-wifi"/></svg>Netzwerk</div>
@@ -745,6 +747,16 @@ border-radius:12px;padding:12px;max-height:170px;overflow:auto;white-space:pre-w
 <div class="metric"><div class="k">Letzter Status</div><div class="v" id="dcode">&ndash;</div></div>
 <div class="metric"><div class="k">Laufzeit</div><div class="v" id="dup">&ndash;</div></div></div>
 <div class="log" id="log">...</div></div>
+<div class="card">
+<div class="ctitle"><svg class="ic"><use href="#i-sun"/></svg>Darstellung</div>
+<div class="sub">Akzentfarbe (Hell/Dunkel-Umschalter ist oben rechts)</div>
+<div class="swatches" id="swatches">
+<div class="sw" data-c="#d5001c" data-c2="#ff2038" style="background:#d5001c" onclick="setAccent(this)"></div>
+<div class="sw" data-c="#0a7cff" data-c2="#3d9bff" style="background:#0a7cff" onclick="setAccent(this)"></div>
+<div class="sw" data-c="#12a150" data-c2="#1bd06a" style="background:#12a150" onclick="setAccent(this)"></div>
+<div class="sw" data-c="#f0a020" data-c2="#ffbe4d" style="background:#f0a020" onclick="setAccent(this)"></div>
+<div class="sw" data-c="#8a8f98" data-c2="#a7acb5" style="background:#8a8f98" onclick="setAccent(this)"></div>
+</div></div>
 </div>
 
 <div class="foot">Inoffizielles Tool &middot; Porsche-Connect-Abo noetig</div>
@@ -784,6 +796,7 @@ var st=statusOf(s);icon('pillicon',st[0]);T('pill').className='pill '+st[1];T('s
 // Verbindungs-Card smart ein/ausblenden
 if(s.has_token&&!forceLogin){T('loginform').style.display='none';T('connectednote').style.display='block';T('connecttitle').textContent='Porsche-Konto'}
 else{T('loginform').style.display='block';T('connectednote').style.display='none';T('connecttitle').textContent='Mit Porsche verbinden'}
+if(s.ap){T('setuphint').style.display='block';if(!window._apOpened){window._apOpened=true;showAdmin()}}else{T('setuphint').style.display='none'}
 var h=location.host||'192.168.4.1';
 T('usoc').textContent='http://'+h+'/soc';T('urange').textContent='http://'+h+'/range';
 T('dip').textContent=s.ip||'-';T('drssi').textContent=(s.rssi||0)+' dBm';
@@ -932,12 +945,21 @@ void setup() {
   server.on("/range", handleRange);
   server.on("/status", handleStatus);
   server.on("/action", HTTP_POST, handleAction);
+  server.onNotFound([]() {
+    if (apMode) {   // Captive Portal: jede unbekannte Anfrage (auch OS-Checks) -> Konfigseite
+      server.sendHeader("Location", "http://" + WiFi.softAPIP().toString() + "/", true);
+      server.send(302, "text/plain", "");
+    } else {
+      server.send(404, "text/plain", "Not found");
+    }
+  });
   server.begin();
 
   if (!apMode && !cfgRefresh.isEmpty()) fetchSoc();  // sofort einmal holen
 }
 
 void loop() {
+  if (apMode) dnsServer.processNextRequest();
   server.handleClient();
   if (!apMode && !cfgRefresh.isEmpty()) {
     uint32_t intervalMs = cfgIntervalMin * 60000UL;

@@ -24,6 +24,14 @@ freundlicher Sprache. Alle technischen Einstellungen liegen im **Admin-Bereich**
 |---|---|
 | ![Admin](docs/screenshots/admin.png) | ![Login mit Captcha](docs/screenshots/login-captcha.png) |
 
+| Erst-Einrichtung (Setup-Hotspot) |
+|---|
+| ![Setup](docs/screenshots/setup.png) |
+
+Beim **ersten Start** öffnet der ESP32 einen Hotspot `openWB-Porsche-Bridge`
+(Passwort `porsche1234`); per **Captive Portal** erscheint die Einrichtung
+automatisch und springt direkt in die WLAN-Konfiguration.
+
 - **Dashboard:** Lade-Ring mit Ladeanzeige (Blitz beim Laden), Status-Pille,
   **Ladeverlauf-Diagramm**, „So verbindest du openWB" mit Kopier-Button.
 - **Admin:** Darstellung (**Hell/Dunkel** + **Akzentfarbe**), Netzwerk,
