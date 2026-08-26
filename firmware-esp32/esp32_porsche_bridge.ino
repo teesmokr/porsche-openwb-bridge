@@ -36,7 +36,7 @@
 #include "mbedtls/base64.h"
 
 // Firmware-Version (fuer den Online-Updater)
-static const char* FW_VERSION = "1.5.3";
+static const char* FW_VERSION = "1.5.4";
 // Standard-Update-Quelle (oeffentliches Firmware-Repo -> OTA ohne Token)
 static const char* DEFAULT_UPDATE_URL =
   "https://raw.githubusercontent.com/teesmokr/porsche-openwb-firmware/main/version.json";
@@ -269,8 +269,11 @@ void fetchSoc() {
       if (m["value"]["percent"].is<float>() || m["value"]["percent"].is<int>())
         soc = (int)round(m["value"]["percent"].as<float>());
     } else if (strcmp(key, "E_RANGE") == 0 || strcmp(key, "RANGE") == 0) {
-      if (range < 0 && m["value"]["kilometers"].is<float>())
-        range = m["value"]["kilometers"].as<float>();
+      if (range < 0) {
+        JsonVariant km = m["value"]["kilometers"];
+        if (km.isNull()) km = m["value"]["value"];   // Alternativ-Feldname
+        if (km.is<int>() || km.is<float>()) range = km.as<float>();   // Ganzzahl ODER Kommazahl
+      }
     } else if (strcmp(key, "BATTERY_CHARGING_STATE") == 0) {
       // Feldname variiert -> defensiv nach "CHARG" in bekannten Feldern suchen
       const char* st = m["value"]["chargingState"] | (m["value"]["state"] | "");
