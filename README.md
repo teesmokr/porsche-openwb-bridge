@@ -28,6 +28,8 @@ freundlicher Sprache. Alle technischen Einstellungen liegen im **Admin-Bereich**
 |---|
 | ![Setup](docs/screenshots/setup.png) |
 
+Erste Schritte
+Flashen (einmalig per USB): esptool-js im Chrome/Edge-Browser öffnen, ESP verbinden und die passende Datei bei Flash-Adresse 0x0 flashen.
 Beim **ersten Start** öffnet der ESP32 einen Hotspot `openWB-Porsche-Bridge`
 (Passwort `porsche1234`); per **Captive Portal** erscheint die Einrichtung
 automatisch und springt direkt in die WLAN-Konfiguration.
